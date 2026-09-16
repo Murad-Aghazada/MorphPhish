@@ -1,4 +1,4 @@
-DEPT={"Finance":18,"Security":15,"IT":14,"Management":16,"HR":12,"Operations":10}
+DEPT={"Finance":18,"Security":15,"IT":14,"Management":16,"Legal":13,"HR":12,"Engineering":12,"Sales":11,"Operations":10,"Marketing":9}
 def calculate(employee, prior_events=0):
     factors={
       "department_exposure": DEPT.get(employee.department,8),

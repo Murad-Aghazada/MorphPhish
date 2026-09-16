@@ -149,7 +149,7 @@ function DeptChart({ data }) {
   return (
     <ResponsiveContainer width="100%" height={320}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} key={theme}>
-        <XAxis dataKey="department" tick={{ fill: muted, fontSize: 12 }} tickLine={false} axisLine={{ stroke: grid }} />
+        <XAxis dataKey="department" interval={0} tick={{ fill: muted, fontSize: 11 }} tickLine={false} axisLine={{ stroke: grid }} />
         <YAxis domain={[0, 100]} tick={{ fill: muted, fontSize: 12 }} tickLine={false} axisLine={false} />
         <Tooltip cursor={{ fill: 'color-mix(in srgb, var(--iris) 8%, transparent)' }}
           contentStyle={{ background: cssVar('--surface'), border: '1px solid ' + grid, borderRadius: 12, color: cssVar('--ink'), fontSize: 13 }} />

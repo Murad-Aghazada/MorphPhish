@@ -3,13 +3,27 @@ from .db import SessionLocal
 from .models import Employee, Scenario, Campaign, CampaignTarget, InteractionEvent, ScenarioStatus, CampaignStatus
 from .services import recalc_risk, ensure_context
 from datetime import datetime, timezone, timedelta
+# Synthetic personas (clearly non-real, demo.example.com domain).
+# Columns: full_name, email, department, role, preferred_language,
+#          privilege_level, access_sensitivity, social_exposure (each 1-5).
 DATA=[
-("Aylin Məmmədova","aylin@demo.example.com","Finance","Senior Accountant","az",3,4,4),
-("Murad Əliyev","murad@demo.example.com","IT","Systems Administrator","az",5,5,3),
-("Nigar Həsənova","nigar@demo.example.com","HR","HR Specialist","az",2,4,5),
-("Elvin Quliyev","elvin@demo.example.com","Security","Security Engineer","en",5,5,2),
-("Leyla Karimova","leyla@demo.example.com","Management","Operations Director","en",5,5,5),
-("Kamran Rzayev","kamran@demo.example.com","Operations","Operations Analyst","az",2,3,4),]
+("Aylin Məmmədova","aylin.mammadova@demo.example.com","Finance","Senior Accountant","az",3,4,4),
+("Rəşad Quliyev","rashad.guliyev@demo.example.com","Finance","Chief Financial Officer","az",5,5,4),
+("Murad Əliyev","murad.aliyev@demo.example.com","IT","Systems Administrator","az",5,5,3),
+("Kənan Hüseynov","kenan.huseynov@demo.example.com","IT","Help Desk Technician","az",2,2,5),
+("Elvin Quliyev","elvin.guliyev@demo.example.com","Security","Security Engineer","en",5,5,2),
+("Nərmin Abbasova","narmin.abbasova@demo.example.com","Security","SOC Analyst","az",3,4,2),
+("Nigar Həsənova","nigar.hasanova@demo.example.com","HR","HR Specialist","az",2,4,5),
+("Səbinə Kərimli","sabina.karimli@demo.example.com","HR","HR Manager","az",3,5,4),
+("Leyla Kərimova","leyla.karimova@demo.example.com","Management","Chief Executive Officer","en",5,5,5),
+("Orxan Nəbiyev","orxan.nabiyev@demo.example.com","Management","Operations Director","az",5,5,4),
+("Kamran Rzayev","kamran.rzayev@demo.example.com","Operations","Operations Analyst","az",2,3,4),
+("Tural İsmayılov","tural.ismayilov@demo.example.com","Legal","Corporate Counsel","az",3,5,3),
+("Aysel Vəliyeva","aysel.valiyeva@demo.example.com","Sales","Account Executive","az",2,3,5),
+("Ramil Cəfərov","ramil.jafarov@demo.example.com","Sales","Sales Manager","az",3,4,5),
+("Günel Məmmədli","gunel.mammadli@demo.example.com","Marketing","Marketing Specialist","az",2,2,5),
+("Daniel Roberts","daniel.roberts@demo.example.com","Engineering","DevOps Engineer","en",5,5,2),
+("Fərid Bağırov","farid.baghirov@demo.example.com","Engineering","Software Engineer","az",3,3,2),]
 def seed():
   db=SessionLocal()
   try:
