@@ -12,7 +12,13 @@ class ContextOut(ORM): id:str; employee_id:str; kind:str; title:str; summary:str
 class ScenarioRequest(BaseModel): employee_id:str; objective:str="Improve phishing awareness"; difficulty:str=Field("medium",pattern="^(easy|medium|hard)$"); language:str|None=None
 class ScenarioOut(ORM):
     id:str; employee_id:str; status:str; language:str; objective:str; difficulty:str; subject:str; email_body:str; pretext:str; landing_page_message:str; training_objective:str; risk_indicators:list; safety_notes:list; created_at:datetime; approved_at:datetime|None
-class CampaignCreate(BaseModel): scenario_id:str; name:str=Field(min_length=3,max_length=180)
+class ScenarioUpdate(BaseModel):
+    subject:str|None=Field(None,min_length=1,max_length=255); email_body:str|None=Field(None,min_length=1); pretext:str|None=Field(None,min_length=1); landing_page_message:str|None=Field(None,min_length=1); training_objective:str|None=None; objective:str|None=Field(None,max_length=160); difficulty:str|None=Field(None,pattern="^(easy|medium|hard)$"); risk_indicators:list|None=None
+class ScenarioLaunchRequest(BaseModel): name:str|None=Field(None,max_length=180)
+class CampaignCreate(BaseModel): scenario_id:str; name:str|None=Field(None,max_length=180)
 class CampaignOut(ORM): id:str; scenario_id:str; name:str; status:str; provider:str; provider_campaign_id:str|None; started_at:datetime|None; completed_at:datetime|None; created_at:datetime
+class LaunchOut(BaseModel): campaign_id:str; session_id:str; status:str; simulation_url:str
+class SimulationOut(BaseModel): session_id:str; campaign_id:str; message:str; notice:str
+class RecommendationOut(BaseModel): employee_id:str; employee:str; topic:str; priority:str; recommendation:str
 class EventIn(BaseModel): session_id:str; event_type:str=Field(pattern="^(page_viewed|link_clicked|form_viewed|credential_simulation_submitted|simulation_reported|email_opened)$"); password:str|None=None
 class EventOut(ORM): id:str; campaign_id:str; employee_id:str; session_id:str; event_type:str; occurred_at:datetime; safe_metadata:dict

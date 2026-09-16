@@ -7,7 +7,9 @@ from .adapters.context import MockContextAdapter
 from .llm.providers import get_llm_provider
 from .integrations.campaign import get_campaign_provider
 from .integrations.email import get_email_provider
+from .core.config import settings
 
+def simulation_url(session_id): return settings.frontend_url.rstrip('/')+f"/simulate/{session_id}"
 def audit(db,action,etype,eid=None,details=None): db.add(AuditEvent(action=action,entity_type=etype,entity_id=eid,details=details or {}))
 def recalc_risk(db,employee):
     prior=db.scalar(select(func.count()).select_from(InteractionEvent).where(InteractionEvent.employee_id==employee.id, InteractionEvent.event_type.in_(["link_clicked","credential_simulation_submitted"]))) or 0
@@ -32,6 +34,9 @@ def validate_scenario(data):
     if "simulation" not in landing or "password" not in landing: raise ValueError("Landing page must clearly identify the simulation and password safety rule")
     return ["Synthetic data only","No real credential storage","Administrative approval required"]
 
+def revalidate_scenario(scenario):
+    return validate_scenario({"subject":scenario.subject,"email_body":scenario.email_body,"pretext":scenario.pretext,"landing_page_message":scenario.landing_page_message})
+
 def generate_scenario(db,employee,objective,difficulty,language):
     rp=recalc_risk(db,employee); ctx=ensure_context(db,employee)
     payload={"employee":{"full_name":employee.full_name,"department":employee.department,"role":employee.role,"preferred_language":language or employee.preferred_language},"risk":{"score":rp.score,"level":rp.level,"factors":rp.factors},"context":[{"kind":x.kind,"title":x.title,"summary":x.summary} for x in ctx],"objective":objective,"difficulty":difficulty}
@@ -41,7 +46,7 @@ def generate_scenario(db,employee,objective,difficulty,language):
 def launch_campaign(db,campaign,scenario,employee):
     if scenario.status!=ScenarioStatus.APPROVED.value: raise ValueError("Scenario must be approved before campaign launch")
     target=CampaignTarget(campaign_id=campaign.id,employee_id=employee.id); db.add(target); db.flush()
-    result=get_campaign_provider().create_campaign(campaign,scenario,target); get_email_provider().send(employee.email,scenario.subject,scenario.email_body+f"\n\nSimulation link: http://localhost:3000/simulate/{target.session_id}")
+    result=get_campaign_provider().create_campaign(campaign,scenario,target); get_email_provider().send(employee.email,scenario.subject,scenario.email_body+f"\n\nSimulation link: {simulation_url(target.session_id)}")
     campaign.status=CampaignStatus.ACTIVE.value; campaign.started_at=datetime.now(timezone.utc); campaign.provider_campaign_id=str(result.get("id","")); target.delivered_at=datetime.now(timezone.utc); scenario.status=ScenarioStatus.ACTIVE.value; audit(db,"campaign_started","campaign",campaign.id,{"provider":campaign.provider}); return target
 
 def analytics(db,campaign_id=None):

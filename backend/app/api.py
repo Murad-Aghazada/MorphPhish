@@ -57,25 +57,46 @@ def approve(id:str,db:Session=Depends(get_db)):
 @router.post('/scenarios/{id}/reject',response_model=ScenarioOut)
 def reject(id:str,db:Session=Depends(get_db)):
     s=one(db,Scenario,id); s.status=ScenarioStatus.REJECTED.value; audit(db,"scenario_rejected","scenario",s.id); db.commit(); return s
+EDITABLE={ScenarioStatus.REVIEW_REQUIRED.value,ScenarioStatus.GENERATED.value,ScenarioStatus.DRAFT.value}
+@router.patch('/scenarios/{id}',response_model=ScenarioOut)
+def edit_scenario(id:str,body:ScenarioUpdate,db:Session=Depends(get_db)):
+    s=one(db,Scenario,id)
+    if s.status not in EDITABLE: raise HTTPException(409,"Only unapproved scenarios can be edited")
+    for k,v in body.model_dump(exclude_unset=True).items(): setattr(s,k,v)
+    try: s.safety_notes=revalidate_scenario(s)
+    except ValueError as e: db.rollback(); raise HTTPException(422,str(e))
+    audit(db,"scenario_edited","scenario",s.id); db.commit(); return s
+@router.post('/scenarios/{id}/launch',response_model=LaunchOut)
+def launch_scenario(id:str,body:ScenarioLaunchRequest|None=None,db:Session=Depends(get_db)):
+    s=one(db,Scenario,id)
+    if s.status!=ScenarioStatus.APPROVED.value: raise HTTPException(409,"Scenario must be approved before launch")
+    e=one(db,Employee,s.employee_id)
+    name=(body.name if body and body.name else None) or f"{s.subject[:60]} — {datetime.now(timezone.utc):%Y-%m-%d %H:%M}"
+    c=Campaign(scenario_id=s.id,name=name,provider=settings.campaign_provider); db.add(c); db.flush(); audit(db,"campaign_created","campaign",c.id)
+    try: t=launch_campaign(db,c,s,e); db.commit()
+    except (ValueError,RuntimeError) as ex: db.rollback(); raise HTTPException(503 if isinstance(ex,RuntimeError) else 409,str(ex))
+    return LaunchOut(campaign_id=c.id,session_id=t.session_id,status=c.status,simulation_url=simulation_url(t.session_id))
 @router.get('/campaigns',response_model=list[CampaignOut])
 def campaigns(db:Session=Depends(get_db)): return db.scalars(select(Campaign).order_by(Campaign.created_at.desc())).all()
 @router.post('/campaigns',response_model=CampaignOut,status_code=201)
 def create_campaign(body:CampaignCreate,db:Session=Depends(get_db)):
     s=one(db,Scenario,body.scenario_id)
     if s.status!=ScenarioStatus.APPROVED.value: raise HTTPException(409,"Scenario must be approved")
-    c=Campaign(scenario_id=s.id,name=body.name,provider=settings.campaign_provider); db.add(c); db.flush(); audit(db,"campaign_created","campaign",c.id); db.commit(); return c
-@router.post('/campaigns/{id}/launch',response_model=dict)
+    name=body.name or f"{s.subject[:60]} — {datetime.now(timezone.utc):%Y-%m-%d %H:%M}"
+    c=Campaign(scenario_id=s.id,name=name,provider=settings.campaign_provider); db.add(c); db.flush(); audit(db,"campaign_created","campaign",c.id); db.commit(); return c
+@router.post('/campaigns/{id}/launch',response_model=LaunchOut)
 def launch(id:str,db:Session=Depends(get_db)):
     c=one(db,Campaign,id); s=one(db,Scenario,c.scenario_id); e=one(db,Employee,s.employee_id)
     if c.status!=CampaignStatus.DRAFT.value: raise HTTPException(409,"Campaign is not in DRAFT state")
-    try: t=launch_campaign(db,c,s,e); db.commit(); return {"campaign_id":c.id,"session_id":t.session_id,"status":c.status}
+    try: t=launch_campaign(db,c,s,e); db.commit()
     except (ValueError,RuntimeError) as ex: db.rollback(); raise HTTPException(503 if isinstance(ex,RuntimeError) else 409,str(ex))
-@router.get('/simulation/{session_id}')
+    return LaunchOut(campaign_id=c.id,session_id=t.session_id,status=c.status,simulation_url=simulation_url(t.session_id))
+@router.get('/simulation/{session_id}',response_model=SimulationOut)
 def simulation(session_id:str,db:Session=Depends(get_db)):
     t=db.scalar(select(CampaignTarget).where(CampaignTarget.session_id==session_id))
     if not t: raise HTTPException(404,"Simulation session not found")
     c=one(db,Campaign,t.campaign_id); s=one(db,Scenario,c.scenario_id)
-    return {"session_id":session_id,"campaign_id":c.id,"message":s.landing_page_message,"notice":"AUTHORIZED SIMULATION — never enter a real password."}
+    return SimulationOut(session_id=session_id,campaign_id=c.id,message=s.landing_page_message,notice="AUTHORIZED SIMULATION — never enter a real password.")
 @router.post('/simulation/{session_id}/event',response_model=EventOut,status_code=201)
 def event(session_id:str,body:EventIn,db:Session=Depends(get_db)):
     if body.session_id!=session_id: raise HTTPException(422,"Session mismatch")
@@ -93,7 +114,7 @@ def analytics_all(db:Session=Depends(get_db)):
     return {**base,"by_department":sorted(by_department,key=lambda x:x['average_risk'],reverse=True)}
 @router.get('/campaigns/{id}/analytics')
 def campaign_analytics(id:str,db:Session=Depends(get_db)): one(db,Campaign,id); return analytics(db,id)
-@router.get('/recommendations')
+@router.get('/recommendations',response_model=list[RecommendationOut])
 def recommendations(db:Session=Depends(get_db)):
     rows=[]
     for e in db.scalars(select(Employee)).all():

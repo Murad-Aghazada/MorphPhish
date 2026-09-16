@@ -30,6 +30,25 @@ def test_delete_employee_cascades_dependents(client):
     # dependent scenario must be gone, not orphaned
     assert client.get(f"/api/v1/scenarios").json()==[]
 
+def test_edit_and_one_click_launch(client):
+    e=client.post('/api/v1/employees',json=employee_payload('flow@demo.example.com')).json()
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"awareness","difficulty":"medium"}).json()
+    # edit before approval
+    r=client.patch(f"/api/v1/scenarios/{s['id']}",json={"subject":"[SIMULATION] Edited subject"})
+    assert r.status_code==200 and r.json()['subject']=="[SIMULATION] Edited subject"
+    # unsafe edit (landing loses required safety wording) is rejected
+    assert client.patch(f"/api/v1/scenarios/{s['id']}",json={"landing_page_message":"Please log in now."}).status_code==422
+    # launch before approval is blocked
+    assert client.post(f"/api/v1/scenarios/{s['id']}/launch").status_code==409
+    client.post(f"/api/v1/scenarios/{s['id']}/approve")
+    # editing an approved scenario is blocked
+    assert client.patch(f"/api/v1/scenarios/{s['id']}",json={"subject":"x"}).status_code==409
+    # one-click launch
+    launch=client.post(f"/api/v1/scenarios/{s['id']}/launch")
+    assert launch.status_code==200
+    body=launch.json()
+    assert body['session_id'] and body['simulation_url'].endswith('/simulate/'+body['session_id'])
+
 def test_campaign_requires_approval(client):
     e=client.post('/api/v1/employees',json=employee_payload()).json(); s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"awareness","difficulty":"easy"}).json()
     assert client.post('/api/v1/campaigns',json={"scenario_id":s['id'],"name":"Blocked campaign"}).status_code==409
