@@ -1,0 +1,111 @@
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, Form
+from sqlalchemy import select, delete
+from sqlalchemy.orm import Session
+from .db import get_db
+from .models import *
+from .schemas import *
+from .services import *
+from .core.config import settings
+router=APIRouter(prefix="/api/v1")
+
+def one(db,model,id):
+    x=db.get(model,id)
+    if not x: raise HTTPException(404,f"{model.__name__} not found")
+    return x
+@router.get('/health')
+def health(): return {"status":"ok","app":settings.app_name,"mode":{"llm":settings.llm_provider,"campaign":settings.campaign_provider,"email":settings.email_provider}}
+@router.get('/employees',response_model=list[EmployeeOut])
+def employees(db:Session=Depends(get_db)): return db.scalars(select(Employee).order_by(Employee.department,Employee.full_name)).all()
+@router.post('/employees',response_model=EmployeeOut,status_code=201)
+def create_employee(body:EmployeeCreate,db:Session=Depends(get_db)):
+    if db.scalar(select(Employee).where(Employee.email==str(body.email))): raise HTTPException(409,"Email already exists")
+    e=Employee(**body.model_dump()); db.add(e); db.flush(); recalc_risk(db,e); ensure_context(db,e); audit(db,"employee_created","employee",e.id); db.commit(); return e
+@router.get('/employees/{id}',response_model=EmployeeOut)
+def employee(id:str,db:Session=Depends(get_db)): return one(db,Employee,id)
+@router.patch('/employees/{id}',response_model=EmployeeOut)
+def update_employee(id:str,body:EmployeeUpdate,db:Session=Depends(get_db)):
+    e=one(db,Employee,id)
+    for k,v in body.model_dump(exclude_unset=True).items(): setattr(e,k,v)
+    recalc_risk(db,e); audit(db,"employee_updated","employee",e.id); db.commit(); return e
+@router.delete('/employees/{id}',status_code=204)
+def delete_employee(id:str,db:Session=Depends(get_db)):
+    e=one(db,Employee,id); db.delete(e); audit(db,"employee_deleted","employee",id); db.commit()
+@router.post('/employees/{id}/risk',response_model=RiskOut)
+def risk(id:str,db:Session=Depends(get_db)):
+    rp=recalc_risk(db,one(db,Employee,id)); db.commit(); return rp
+@router.get('/employees/{id}/risk',response_model=RiskOut)
+def get_risk(id:str,db:Session=Depends(get_db)):
+    one(db,Employee,id); rp=db.scalar(select(RiskProfile).where(RiskProfile.employee_id==id));
+    if not rp: raise HTTPException(404,"Risk profile not found")
+    return rp
+@router.get('/employees/{id}/context',response_model=list[ContextOut])
+def context(id:str,db:Session=Depends(get_db)):
+    items=ensure_context(db,one(db,Employee,id)); db.commit(); return items
+@router.get('/scenarios',response_model=list[ScenarioOut])
+def scenarios(db:Session=Depends(get_db)): return db.scalars(select(Scenario).order_by(Scenario.created_at.desc())).all()
+@router.post('/scenarios/generate',response_model=ScenarioOut,status_code=201)
+def gen(body:ScenarioRequest,db:Session=Depends(get_db)):
+    try: s=generate_scenario(db,one(db,Employee,body.employee_id),body.objective,body.difficulty,body.language); db.commit(); return s
+    except ValueError as e: db.rollback(); raise HTTPException(422,str(e))
+    except RuntimeError as e: db.rollback(); raise HTTPException(503,str(e))
+@router.post('/scenarios/{id}/approve',response_model=ScenarioOut)
+def approve(id:str,db:Session=Depends(get_db)):
+    s=one(db,Scenario,id)
+    if s.status not in {ScenarioStatus.REVIEW_REQUIRED.value,ScenarioStatus.GENERATED.value}: raise HTTPException(409,"Scenario is not awaiting approval")
+    s.status=ScenarioStatus.APPROVED.value; s.approved_at=datetime.now(timezone.utc); audit(db,"scenario_approved","scenario",s.id); db.commit(); return s
+@router.post('/scenarios/{id}/reject',response_model=ScenarioOut)
+def reject(id:str,db:Session=Depends(get_db)):
+    s=one(db,Scenario,id); s.status=ScenarioStatus.REJECTED.value; audit(db,"scenario_rejected","scenario",s.id); db.commit(); return s
+@router.get('/campaigns',response_model=list[CampaignOut])
+def campaigns(db:Session=Depends(get_db)): return db.scalars(select(Campaign).order_by(Campaign.created_at.desc())).all()
+@router.post('/campaigns',response_model=CampaignOut,status_code=201)
+def create_campaign(body:CampaignCreate,db:Session=Depends(get_db)):
+    s=one(db,Scenario,body.scenario_id)
+    if s.status!=ScenarioStatus.APPROVED.value: raise HTTPException(409,"Scenario must be approved")
+    c=Campaign(scenario_id=s.id,name=body.name,provider=settings.campaign_provider); db.add(c); db.flush(); audit(db,"campaign_created","campaign",c.id); db.commit(); return c
+@router.post('/campaigns/{id}/launch',response_model=dict)
+def launch(id:str,db:Session=Depends(get_db)):
+    c=one(db,Campaign,id); s=one(db,Scenario,c.scenario_id); e=one(db,Employee,s.employee_id)
+    if c.status!=CampaignStatus.DRAFT.value: raise HTTPException(409,"Campaign is not in DRAFT state")
+    try: t=launch_campaign(db,c,s,e); db.commit(); return {"campaign_id":c.id,"session_id":t.session_id,"status":c.status}
+    except (ValueError,RuntimeError) as ex: db.rollback(); raise HTTPException(503 if isinstance(ex,RuntimeError) else 409,str(ex))
+@router.get('/simulation/{session_id}')
+def simulation(session_id:str,db:Session=Depends(get_db)):
+    t=db.scalar(select(CampaignTarget).where(CampaignTarget.session_id==session_id))
+    if not t: raise HTTPException(404,"Simulation session not found")
+    c=one(db,Campaign,t.campaign_id); s=one(db,Scenario,c.scenario_id)
+    return {"session_id":session_id,"campaign_id":c.id,"message":s.landing_page_message,"notice":"AUTHORIZED SIMULATION — never enter a real password."}
+@router.post('/simulation/{session_id}/event',response_model=EventOut,status_code=201)
+def event(session_id:str,body:EventIn,db:Session=Depends(get_db)):
+    if body.session_id!=session_id: raise HTTPException(422,"Session mismatch")
+    t=db.scalar(select(CampaignTarget).where(CampaignTarget.session_id==session_id))
+    if not t: raise HTTPException(404,"Simulation session not found")
+    # Deliberately discard body.password. It is never stored, hashed, logged, forwarded, or included in metadata.
+    meta={"credential_submitted":True} if body.event_type=="credential_simulation_submitted" else {}
+    ev=InteractionEvent(campaign_id=t.campaign_id,employee_id=t.employee_id,session_id=session_id,event_type=body.event_type,safe_metadata=meta); db.add(ev); db.flush(); audit(db,"simulation_event","campaign",t.campaign_id,{"event_type":body.event_type}); db.commit(); return ev
+@router.get('/analytics')
+def analytics_all(db:Session=Depends(get_db)):
+    base=analytics(db); employees=db.scalars(select(Employee)).all(); dept={}
+    for e in employees:
+      rp=db.scalar(select(RiskProfile).where(RiskProfile.employee_id==e.id)); d=dept.setdefault(e.department,{"count":0,"risk_total":0.0}); d["count"]+=1; d["risk_total"]+=rp.score if rp else 0
+    by_department=[{"department":k,"employees":v["count"],"average_risk":round(v["risk_total"]/v["count"],1)} for k,v in dept.items()]
+    return {**base,"by_department":sorted(by_department,key=lambda x:x['average_risk'],reverse=True)}
+@router.get('/campaigns/{id}/analytics')
+def campaign_analytics(id:str,db:Session=Depends(get_db)): one(db,Campaign,id); return analytics(db,id)
+@router.get('/recommendations')
+def recommendations(db:Session=Depends(get_db)):
+    rows=[]
+    for e in db.scalars(select(Employee)).all():
+        clicked=db.scalar(select(func.count()).select_from(InteractionEvent).where(InteractionEvent.employee_id==e.id,InteractionEvent.event_type=="link_clicked")) or 0
+        submitted=db.scalar(select(func.count()).select_from(InteractionEvent).where(InteractionEvent.employee_id==e.id,InteractionEvent.event_type=="credential_simulation_submitted")) or 0
+        reported=db.scalar(select(func.count()).select_from(InteractionEvent).where(InteractionEvent.employee_id==e.id,InteractionEvent.event_type=="simulation_reported")) or 0
+        topics=[]
+        if submitted: topics.append(("credential hygiene","high","Use simulation-only values and verify identity prompts before entering credentials."))
+        if clicked: topics.append(("link inspection","medium","Inspect link destinations and validate the sender/context before following links."))
+        if not reported: topics.append(("reporting procedure","medium","Practice using the organization-approved reporting channel for suspicious messages."))
+        if not topics: topics.append(("sender validation","low","Continue validating sender identity and unexpected requests."))
+        rows.extend({"employee_id":e.id,"employee":e.full_name,"topic":a,"priority":b,"recommendation":c} for a,b,c in topics)
+    return rows
+@router.get('/audit')
+def audit_events(db:Session=Depends(get_db)): return [{"action":x.action,"entity_type":x.entity_type,"entity_id":x.entity_id,"details":x.details,"created_at":x.created_at} for x in db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(100)).all()]
