@@ -1,6 +1,6 @@
 # Rules of Engagement (RoE) — DRAFT
 
-**Project:** RiskIntern PhishSim — AI-assisted, role-oriented phishing-awareness simulation
+**Project:** MorphPhish — AI-assisted, role-oriented phishing-awareness simulation
 **Status:** Draft v0.1 (Week 1 deliverable) — requires sign-off before any non-synthetic execution
 **Document owner:** _TBD_  ·  **Approver(s):** _TBD_  ·  **Date:** _TBD_
 

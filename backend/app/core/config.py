@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 
 class Settings(BaseSettings):
-    app_name: str = "RiskIntern PhishSim"
+    app_name: str = "MorphPhish"
     app_env: str = "development"
     app_secret_key: str = "change-me"
     database_url: str = "sqlite:///./riskintern.db"

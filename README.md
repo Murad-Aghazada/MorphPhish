@@ -1,4 +1,4 @@
-# RiskIntern PhishSim
+# MorphPhish
 
 Authorized, role-oriented, AI-assisted phishing-awareness simulation prototype using synthetic employee/context data. It implements the full flow from persona → explainable risk → contextual scenario generation → safety validation → admin approval → campaign → safe landing events → PostgreSQL analytics → React dashboard.
 
