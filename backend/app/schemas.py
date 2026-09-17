@@ -18,7 +18,7 @@ class ScenarioLaunchRequest(BaseModel): name:str|None=Field(None,max_length=180)
 class CampaignCreate(BaseModel): scenario_id:str; name:str|None=Field(None,max_length=180)
 class CampaignOut(ORM): id:str; scenario_id:str; name:str; status:str; provider:str; provider_campaign_id:str|None; started_at:datetime|None; completed_at:datetime|None; created_at:datetime
 class LaunchOut(BaseModel): campaign_id:str; session_id:str; status:str; simulation_url:str
-class SimulationOut(BaseModel): session_id:str; campaign_id:str; message:str; notice:str
+class SimulationOut(BaseModel): session_id:str; campaign_id:str; sender:str; recipient:str; subject:str; email_body:str; pretext:str; landing_page_message:str; notice:str
 class RecommendationOut(BaseModel): employee_id:str; employee:str; topic:str; priority:str; recommendation:str
 class EventIn(BaseModel): session_id:str; event_type:str=Field(pattern="^(page_viewed|link_clicked|form_viewed|credential_simulation_submitted|simulation_reported|email_opened)$"); password:str|None=None
 class EventOut(ORM): id:str; campaign_id:str; employee_id:str; session_id:str; event_type:str; occurred_at:datetime; safe_metadata:dict

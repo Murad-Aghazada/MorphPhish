@@ -49,6 +49,17 @@ def test_edit_and_one_click_launch(client):
     body=launch.json()
     assert body['session_id'] and body['simulation_url'].endswith('/simulate/'+body['session_id'])
 
+def test_simulation_returns_full_message(client):
+    e=client.post('/api/v1/employees',json=employee_payload('sim@demo.example.com')).json()
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"awareness","difficulty":"medium"}).json()
+    client.post(f"/api/v1/scenarios/{s['id']}/approve")
+    launch=client.post(f"/api/v1/scenarios/{s['id']}/launch").json()
+    sim=client.get(f"/api/v1/simulation/{launch['session_id']}").json()
+    for k in ("sender","recipient","subject","email_body","pretext","landing_page_message"):
+        assert sim.get(k), f"simulation missing {k}"
+    assert e['email'] in sim['recipient']
+    assert sim['email_body'].count('. ') >= 2  # a multi-sentence lure, not a stub
+
 def test_campaign_requires_approval(client):
     e=client.post('/api/v1/employees',json=employee_payload()).json(); s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"awareness","difficulty":"easy"}).json()
     assert client.post('/api/v1/campaigns',json={"scenario_id":s['id'],"name":"Blocked campaign"}).status_code==409

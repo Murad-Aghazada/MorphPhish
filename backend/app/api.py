@@ -91,12 +91,17 @@ def launch(id:str,db:Session=Depends(get_db)):
     try: t=launch_campaign(db,c,s,e); db.commit()
     except (ValueError,RuntimeError) as ex: db.rollback(); raise HTTPException(503 if isinstance(ex,RuntimeError) else 409,str(ex))
     return LaunchOut(campaign_id=c.id,session_id=t.session_id,status=c.status,simulation_url=simulation_url(t.session_id))
+SENDER_TEAM={"Finance":"Finance Operations","IT":"IT Service Desk","Security":"Information Security","HR":"People & Culture","Management":"Executive Office","Legal":"Legal & Compliance","Sales":"Sales Operations","Marketing":"Brand & Communications","Operations":"Operations Center","Engineering":"Platform Engineering"}
+def _sender(dept):
+    team=SENDER_TEAM.get(dept,"IT Service Desk")
+    slug=team.lower().replace(" & ","-").replace(" ","-")
+    return f"{team} <{slug}@corp-portal.example>"  # lookalike, reserved .example domain — never a real sender
 @router.get('/simulation/{session_id}',response_model=SimulationOut)
 def simulation(session_id:str,db:Session=Depends(get_db)):
     t=db.scalar(select(CampaignTarget).where(CampaignTarget.session_id==session_id))
     if not t: raise HTTPException(404,"Simulation session not found")
-    c=one(db,Campaign,t.campaign_id); s=one(db,Scenario,c.scenario_id)
-    return SimulationOut(session_id=session_id,campaign_id=c.id,message=s.landing_page_message,notice="AUTHORIZED SIMULATION — never enter a real password.")
+    c=one(db,Campaign,t.campaign_id); s=one(db,Scenario,c.scenario_id); e=one(db,Employee,s.employee_id)
+    return SimulationOut(session_id=session_id,campaign_id=c.id,sender=_sender(e.department),recipient=f"{e.full_name} <{e.email}>",subject=s.subject,email_body=s.email_body,pretext=s.pretext,landing_page_message=s.landing_page_message,notice="AUTHORIZED SIMULATION — never enter a real password.")
 @router.post('/simulation/{session_id}/event',response_model=EventOut,status_code=201)
 def event(session_id:str,body:EventIn,db:Session=Depends(get_db)):
     if body.session_id!=session_id: raise HTTPException(422,"Session mismatch")

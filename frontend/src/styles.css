@@ -229,8 +229,17 @@ button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 .toast.info { border-left: 3px solid var(--accent); }
 
 /* ---------- simulation landing (victim view) ---------- */
-.landing { max-width: 640px; margin: 8vh auto; padding: 0 20px; }
-.landing .banner { background: color-mix(in srgb, var(--risk-medium) 16%, transparent); border: 1px solid color-mix(in srgb, var(--risk-medium) 45%, transparent); color: var(--ink); padding: 14px 16px; border-radius: 12px; font-family: var(--font-mono); font-size: 12px; letter-spacing: .05em; font-weight: 500; margin-bottom: 24px; }
+.landing { max-width: 660px; margin: 6vh auto; padding: 0 20px; }
+.landing .banner { background: color-mix(in srgb, var(--risk-medium) 16%, transparent); border: 1px solid color-mix(in srgb, var(--risk-medium) 45%, transparent); color: var(--ink); padding: 14px 16px; border-radius: 12px; font-family: var(--font-mono); font-size: 12px; letter-spacing: .04em; line-height: 1.5; font-weight: 500; margin-bottom: 20px; }
+.mailcard { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+.mailhead { padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.mrow { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: baseline; padding: 3px 0; font-size: 14px; }
+.mrow > span:first-child { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.mailbody { padding: 20px; }
+.mailbody p { margin: 0 0 18px; line-height: 1.7; color: var(--ink-2); }
+.portal { margin-top: 16px; border-top: 3px solid transparent; border-image: var(--morph) 1; }
+.disclose { margin-top: 18px; padding: 14px 16px; border-radius: 12px; text-align: center; font-size: 13px; color: var(--muted); background: var(--surface-2); border: 1px dashed var(--border-strong); }
+.portal input[readonly] { color: var(--muted); background: var(--surface-2); cursor: not-allowed; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1000px) {

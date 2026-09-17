@@ -470,34 +470,58 @@ function Sim() {
   const { sid } = useParams();
   const [d, e] = useLoad('/simulation/' + sid);
   const toast = useToast();
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState('');
+  const [opened, setOpened] = useState(false);
   const ev = async (type, pw) => {
     try {
       await api(`/simulation/${sid}/event`, { method: 'POST', body: JSON.stringify({ session_id: sid, event_type: type, password: pw }) });
-      setDone(true);
-      toast('Recorded. Any value you typed was discarded — never stored.', 'ok');
+      setDone(type);
+      const notes = {
+        link_clicked: 'Link click recorded — in a real attack this is where you land on a fake page.',
+        form_viewed: 'Form view recorded.',
+        credential_simulation_submitted: 'Recorded. Any value you typed was discarded immediately — never stored.',
+        simulation_reported: 'Nicely done — reporting is exactly the right move.',
+      };
+      toast(notes[type] || 'Recorded.', type === 'simulation_reported' ? 'ok' : 'info');
     } catch (x) { toast(x.message, 'err'); }
   };
   if (e) return <div className="landing"><Err e={e} /></div>;
   if (!d) return <div className="landing"><Load /></div>;
+  const recipientEmail = (d.recipient.match(/<(.+)>/) || [])[1] || d.recipient;
   return (
     <div className="landing">
-      <div className="banner">⚠ AUTHORIZED SECURITY-AWARENESS SIMULATION — never enter a real password</div>
-      <Head eyebrow="Simulation landing" title="You've reached a training page" />
-      <div className="card stack">
-        <p>{d.message}</p>
-        <div className="actions">
-          <button className="secondary" onClick={() => ev('link_clicked')}>Record link click</button>
-          <button className="secondary" onClick={() => ev('form_viewed')}>View sign-in form</button>
+      <div className="banner">⚠ AUTHORIZED SECURITY-AWARENESS SIMULATION — this is a training exercise. Never enter a real password.</div>
+
+      <div className="mailcard">
+        <div className="mailhead">
+          <div className="mrow"><span>From</span><b>{d.sender}</b></div>
+          <div className="mrow"><span>To</span><span className="muted">{d.recipient}</span></div>
+          <div className="mrow"><span>Subject</span><b>{d.subject}</b></div>
         </div>
-        <label>Simulation value only — do not enter a real password</label>
-        <div className="form">
-          <input id="pw" type="password" placeholder="Use a fake demo value" style={{ flex: 1 }} />
-          <button onClick={() => ev('credential_simulation_submitted', document.getElementById('pw').value)}>Submit</button>
+        <div className="mailbody">
+          <p>{d.email_body}</p>
+          <button onClick={() => { setOpened(true); ev('link_clicked'); }}>Open secure portal →</button>
         </div>
-        <button className="ghost" onClick={() => ev('simulation_reported')}>Report this as phishing</button>
-        {done && <p className="muted">Thanks — this was a safe simulation. Your response was recorded for awareness training.</p>}
       </div>
+
+      <div className="card portal">
+        <div className="eyebrow">corp-portal.example</div>
+        <h3 style={{ marginTop: 6 }}>Sign in to continue</h3>
+        <p className="muted" style={{ marginTop: 0 }}>You reached this page by following the link in the message above. In a real attack, this page would steal whatever you type.</p>
+        <div className="editform">
+          <label>Email</label>
+          <input value={recipientEmail} readOnly />
+          <label>Password — simulation value only, never a real one</label>
+          <input id="pw" type="password" placeholder="Type a fake demo value" onFocus={() => !opened && ev('form_viewed')} />
+        </div>
+        <div className="actions">
+          <button onClick={() => ev('credential_simulation_submitted', document.getElementById('pw').value)}>Sign in</button>
+          <button className="ghost" onClick={() => ev('simulation_reported')}>This looks like phishing — report it</button>
+        </div>
+      </div>
+
+      <div className="disclose">{d.landing_page_message}</div>
+      {done && <p className="muted" style={{ textAlign: 'center' }}>Safe simulation complete — your “{done.replace(/_/g, ' ')}” response was recorded for awareness training. No credentials were stored.</p>}
     </div>
   );
 }
