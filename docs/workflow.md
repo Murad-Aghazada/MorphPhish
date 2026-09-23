@@ -39,7 +39,11 @@ MorphPhish/
 `.env`, real credentials, real employee/PII data, `node_modules/`, `.venv/`, build output, `*.db`.
 (Enforced by `.gitignore`; verify with `git status` before every commit.)
 
-## Team roles (Week 1 — fill in)
+## Progress
+- **Week 1 — done:** git + workflow, RoE draft, Docker dev env, PostgreSQL schema, synthetic data.
+- **Week 2 — done:** HR data layer via adapter pattern (`MockHRAdapter` + `RestHRAdapter` stub, `POST /hr/sync`), role- and department-aware risk profile schema, profile CRUD endpoints, LLM integration (mock/OpenAI) with per-department prompt templates, multilingual (AZ/EN) generation.
+
+## Team roles (fill in)
 | Module | Owner |
 |---|---|
 | Risk profiling + data model | _TBD_ |

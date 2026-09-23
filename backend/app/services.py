@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from .models import *
 from .risk import calculate
 from .adapters.context import MockContextAdapter
+from .adapters.hr import get_hr_adapter, FIELDS as HR_FIELDS
 from .llm.providers import get_llm_provider
 from .integrations.campaign import get_campaign_provider
 from .integrations.email import get_email_provider
@@ -24,6 +25,29 @@ def ensure_context(db,employee):
     if existing: return existing
     for kind,title,summary,meta in MockContextAdapter().generate(employee): db.add(OperationalContext(employee_id=employee.id,kind=kind,title=title,summary=summary,metadata_json=meta))
     db.flush(); return db.scalars(select(OperationalContext).where(OperationalContext.employee_id==employee.id)).all()
+
+def sync_from_hr(db, provider_label=None):
+    """Import/update employees from the configured HR adapter (idempotent).
+
+    Matches existing employees by external_id, then email. Recalculates risk
+    and ensures operational context for every synced persona.
+    """
+    adapter=get_hr_adapter(); label=provider_label or f"{settings.hr_provider}-hr"
+    created=updated=0
+    for rec in adapter.list_employees():
+        rec={k:rec.get(k) for k in HR_FIELDS}
+        e=None
+        if rec.get("external_id"): e=db.scalar(select(Employee).where(Employee.external_id==rec["external_id"]))
+        if not e and rec.get("email"): e=db.scalar(select(Employee).where(Employee.email==rec["email"]))
+        if e:
+            for k in ("full_name","email","department","role","preferred_language","privilege_level","access_sensitivity","social_exposure"):
+                if rec.get(k) is not None: setattr(e,k,rec[k])
+            e.external_id=rec.get("external_id"); e.source=label; updated+=1
+        else:
+            e=Employee(source=label,**{k:rec[k] for k in HR_FIELDS if rec.get(k) is not None}); db.add(e); created+=1
+        db.flush(); recalc_risk(db,e); ensure_context(db,e)
+    audit(db,"hr_sync","employee",None,{"provider":label,"created":created,"updated":updated})
+    return {"provider":label,"created":created,"updated":updated,"total":created+updated}
 
 def validate_scenario(data):
     text=" ".join(str(data.get(k,"")) for k in ["subject","email_body","pretext","landing_page_message"]).lower()

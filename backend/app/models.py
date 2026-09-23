@@ -16,6 +16,7 @@ class Employee(Base):
     full_name:Mapped[str]=mapped_column(String(160)); email:Mapped[str]=mapped_column(String(255),unique=True,index=True)
     department:Mapped[str]=mapped_column(String(80),index=True); role:Mapped[str]=mapped_column(String(120),index=True); preferred_language:Mapped[str]=mapped_column(String(10),default="az")
     privilege_level:Mapped[int]=mapped_column(Integer,default=1); access_sensitivity:Mapped[int]=mapped_column(Integer,default=1); social_exposure:Mapped[int]=mapped_column(Integer,default=1)
+    source:Mapped[str]=mapped_column(String(40),default="manual",index=True); external_id:Mapped[str|None]=mapped_column(String(64),nullable=True,index=True)
     active:Mapped[bool]=mapped_column(Boolean,default=True); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now); updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now,onupdate=now)
 class RiskProfile(Base):
     __tablename__="risk_profiles"; __table_args__=(UniqueConstraint("employee_id",name="uq_risk_employee"),)

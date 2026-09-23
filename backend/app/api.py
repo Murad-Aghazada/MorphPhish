@@ -17,6 +17,14 @@ def one(db,model,id):
 def health(): return {"status":"ok","app":settings.app_name,"mode":{"llm":settings.llm_provider,"campaign":settings.campaign_provider,"email":settings.email_provider}}
 @router.get('/employees',response_model=list[EmployeeOut])
 def employees(db:Session=Depends(get_db)): return db.scalars(select(Employee).order_by(Employee.department,Employee.full_name)).all()
+@router.get('/hr/source',response_model=list[HRRecordOut])
+def hr_source():
+    try: return get_hr_adapter().list_employees()
+    except RuntimeError as e: raise HTTPException(503,str(e))
+@router.post('/hr/sync',response_model=HRSyncResult)
+def hr_sync(db:Session=Depends(get_db)):
+    try: res=sync_from_hr(db); db.commit(); return res
+    except RuntimeError as e: db.rollback(); raise HTTPException(503,str(e))
 @router.post('/employees',response_model=EmployeeOut,status_code=201)
 def create_employee(body:EmployeeCreate,db:Session=Depends(get_db)):
     if db.scalar(select(Employee).where(Employee.email==str(body.email))): raise HTTPException(409,"Email already exists")

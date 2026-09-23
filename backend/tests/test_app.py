@@ -60,6 +60,26 @@ def test_simulation_returns_full_message(client):
     assert e['email'] in sim['recipient']
     assert sim['email_body'].count('. ') >= 2  # a multi-sentence lure, not a stub
 
+def test_hr_source_and_idempotent_sync(client):
+    src=client.get('/api/v1/hr/source').json()
+    assert len(src) > 5 and src[0]['external_id']
+    first=client.post('/api/v1/hr/sync').json()
+    assert first['created'] == len(src) and first['updated'] == 0
+    # second sync updates in place, never duplicates
+    again=client.post('/api/v1/hr/sync').json()
+    assert again['created'] == 0 and again['updated'] == len(src)
+    emps=client.get('/api/v1/employees').json()
+    assert len(emps) == len(src)
+    assert all(e['source'] == 'mock-hr' and e['external_id'] for e in emps)
+
+def test_risk_is_role_aware(client):
+    client.post('/api/v1/hr/sync')
+    emps={e['role']: e['id'] for e in client.get('/api/v1/employees').json()}
+    cfo=client.get(f"/api/v1/employees/{emps['Chief Financial Officer']}/risk").json()
+    spec=client.get(f"/api/v1/employees/{emps['Marketing Specialist']}/risk").json()
+    assert cfo['factors']['role_seniority'] > spec['factors']['role_seniority']
+    assert cfo['score'] > spec['score']
+
 def test_campaign_requires_approval(client):
     e=client.post('/api/v1/employees',json=employee_payload()).json(); s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"awareness","difficulty":"easy"}).json()
     assert client.post('/api/v1/campaigns',json={"scenario_id":s['id'],"name":"Blocked campaign"}).status_code==409

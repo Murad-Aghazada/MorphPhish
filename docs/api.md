@@ -6,6 +6,8 @@ Swagger is available at `/docs`.
 |---|---|---|
 | GET | `/api/v1/health` | Health and provider mode |
 | GET/POST | `/api/v1/employees` | List/create synthetic personas |
+| GET | `/api/v1/hr/source` | Preview raw records from the HR data layer (adapter) |
+| POST | `/api/v1/hr/sync` | Import/update employees from the HR adapter (idempotent upsert) |
 | GET/PATCH/DELETE | `/api/v1/employees/{id}` | Persona CRUD |
 | GET/POST | `/api/v1/employees/{id}/risk` | View/recalculate deterministic risk |
 | GET | `/api/v1/employees/{id}/context` | Synthetic operational context |

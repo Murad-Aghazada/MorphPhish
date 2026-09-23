@@ -187,15 +187,29 @@ function Dashboard() {
 
 /* ------------------------------------------------------------------ employees */
 function Employees() {
-  const [d, e] = useLoad('/employees');
+  const [d, e, setD] = useLoad('/employees');
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const sync = async () => {
+    setBusy(true);
+    try {
+      const r = await api('/hr/sync', { method: 'POST' });
+      setD(await api('/employees'));
+      toast(`Synced from ${r.provider}: ${r.created} added, ${r.updated} updated.`, 'ok');
+    } catch (x) { toast(x.message, 'err'); }
+    setBusy(false);
+  };
   if (e) return <Err e={e} />;
   return (
     <>
-      <Head eyebrow="Synthetic personas" title="Employees" sub="Role, department, and language drive each persona's risk profile." />
+      <div className="row" style={{ alignItems: 'flex-end' }}>
+        <Head eyebrow="Personas from the HR data layer" title="Employees" sub="Role, department, and language drive each persona's risk profile." />
+        <button className="secondary" onClick={sync} disabled={busy}>{busy ? 'Syncing…' : 'Sync from HR'}</button>
+      </div>
       {!d ? <Load /> : (
         <div className="card" style={{ padding: 8 }}>
           <table>
-            <thead><tr><th>Name</th><th>Department</th><th>Role</th><th>Lang</th><th /></tr></thead>
+            <thead><tr><th>Name</th><th>Department</th><th>Role</th><th>Lang</th><th>Source</th><th /></tr></thead>
             <tbody>
               {d.map((x) => (
                 <tr key={x.id}>
@@ -203,6 +217,7 @@ function Employees() {
                   <td>{x.department}</td>
                   <td className="muted">{x.role}</td>
                   <td className="mono">{x.preferred_language}</td>
+                  <td><span className="badge" title={x.external_id || ''}>{x.source}</span></td>
                   <td style={{ textAlign: 'right' }}><NavLink to={`/employees/${x.id}`}>View →</NavLink></td>
                 </tr>
               ))}
