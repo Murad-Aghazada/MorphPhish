@@ -117,6 +117,7 @@ def test_russian_generation(client):
     # explicit language override also works
     s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium","language":"ru"}).json()
     assert 'Здравствуйте' in s['email_body']                       # Cyrillic Russian output
+    assert 'Проверка доступа' in s['email_body']                    # operational context localized, not English
     assert 'password' in s['landing_page_message'].lower()          # safety words retained
     assert 'simulation' in s['landing_page_message'].lower()
     from app.llm import prompts
