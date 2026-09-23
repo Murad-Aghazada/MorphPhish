@@ -77,6 +77,12 @@ _LANDING = {
 }
 
 
+def safe_landing(lang):
+    """Trusted, localized safety disclosure. Safety-critical text is never
+    left to the LLM — generate_scenario overrides the model's landing with this."""
+    return _LANDING[normalize_language(lang)]
+
+
 def _subject(lang, difficulty, asset, ctx_ref):
     tpl = {
         "en": {"easy": "URGENT: your account will be suspended today",

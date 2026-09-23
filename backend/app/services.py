@@ -6,7 +6,7 @@ from .risk import calculate
 from .adapters.context import MockContextAdapter
 from .adapters.hr import get_hr_adapter, FIELDS as HR_FIELDS
 from .llm.providers import get_llm_provider
-from .llm.prompts import normalize_language
+from .llm.prompts import normalize_language, safe_landing
 from .integrations.campaign import get_campaign_provider
 from .integrations.email import get_email_provider
 from .core.config import settings
@@ -75,7 +75,9 @@ def generate_scenario(db,employee,objective,difficulty,language):
     rp=recalc_risk(db,employee); ctx=ensure_context(db,employee)
     target_lang=normalize_language(language or employee.preferred_language)
     payload={"employee":{"full_name":employee.full_name,"department":employee.department,"role":employee.role,"preferred_language":language or employee.preferred_language},"risk":{"score":rp.score,"level":rp.level,"factors":rp.factors},"context":_localize_context(ctx,target_lang),"objective":objective,"difficulty":difficulty}
-    data=get_llm_provider().generate(payload); notes=validate_scenario(data)
+    data=get_llm_provider().generate(payload)
+    data["landing_page_message"]=safe_landing(target_lang)  # safety-critical text is enforced by us, not the LLM
+    notes=validate_scenario(data)
     s=Scenario(employee_id=employee.id,status=ScenarioStatus.REVIEW_REQUIRED.value,language=language or employee.preferred_language,objective=objective,difficulty=difficulty,subject=data["subject"],email_body=data["email_body"],pretext=data["pretext"],landing_page_message=data["landing_page_message"],training_objective=data["training_objective"],risk_indicators=data["risk_indicators"],safety_notes=notes); db.add(s); db.flush(); audit(db,"scenario_generated","scenario",s.id,{"provider":"configured"}); return s
 
 def launch_campaign(db,campaign,scenario,employee):
