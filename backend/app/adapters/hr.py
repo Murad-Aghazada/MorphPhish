@@ -42,6 +42,8 @@ _DIRECTORY = [
     ("HR-1015", "Günel Məmmədli", "gunel.mammadli@demo.example.com", "Marketing", "Marketing Specialist", "az", 2, 2, 5),
     ("HR-1016", "Daniel Roberts", "daniel.roberts@demo.example.com", "Engineering", "DevOps Engineer", "en", 5, 5, 2),
     ("HR-1017", "Fərid Bağırov", "farid.baghirov@demo.example.com", "Engineering", "Software Engineer", "az", 3, 3, 2),
+    ("HR-1018", "Viktor Sokolov", "viktor.sokolov@demo.example.com", "IT", "Network Engineer", "ru", 4, 4, 3),
+    ("HR-1019", "Anna Ivanova", "anna.ivanova@demo.example.com", "Finance", "Accounts Payable Specialist", "ru", 2, 4, 4),
 ]
 
 

@@ -342,12 +342,13 @@ function Simulations() {
   const [emp, setEmp] = useState('');
   const [obj, setObj] = useState('Recognize contextual social-engineering cues');
   const [diff, setDiff] = useState('medium');
+  const [lang, setLang] = useState('');
   const [busy, setBusy] = useState(false);
   const refresh = async () => setScen(await api('/scenarios'));
   const gen = async () => {
     setBusy(true);
     try {
-      await api('/scenarios/generate', { method: 'POST', body: JSON.stringify({ employee_id: emp, objective: obj, difficulty: diff }) });
+      await api('/scenarios/generate', { method: 'POST', body: JSON.stringify({ employee_id: emp, objective: obj, difficulty: diff, language: lang || undefined }) });
       await refresh();
       toast('Message generated — review it below.', 'ok');
     } catch (x) { toast(x.message, 'err'); }
@@ -365,6 +366,9 @@ function Simulations() {
         <input style={{ minWidth: 260, flex: 1 }} value={obj} onChange={(x) => setObj(x.target.value)} placeholder="Training objective" />
         <select value={diff} onChange={(x) => setDiff(x.target.value)}>
           <option value="easy">easy</option><option value="medium">medium</option><option value="hard">hard</option>
+        </select>
+        <select value={lang} onChange={(x) => setLang(x.target.value)} title="Output language">
+          <option value="">Auto (persona)</option><option value="az">Azərbaycanca</option><option value="en">English</option><option value="ru">Русский</option>
         </select>
         <button disabled={!emp || busy} onClick={gen}>{busy ? 'Generating…' : 'Generate message'}</button>
       </div>

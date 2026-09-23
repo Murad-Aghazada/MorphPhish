@@ -112,6 +112,16 @@ def test_prompt_layer_builds_system_and_user():
     system,user=prompts.build_prompt(payload)
     assert 'Azerbaijani' in system and user['language']=='az'
 
+def test_russian_generation(client):
+    e=client.post('/api/v1/employees',json={**employee_payload('ru@demo.example.com'),"preferred_language":"ru"}).json()
+    # explicit language override also works
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium","language":"ru"}).json()
+    assert 'Здравствуйте' in s['email_body']                       # Cyrillic Russian output
+    assert 'password' in s['landing_page_message'].lower()          # safety words retained
+    assert 'simulation' in s['landing_page_message'].lower()
+    from app.llm import prompts
+    assert prompts.normalize_language('ru') == 'ru' and 'Russian' in prompts.LANGUAGES.values()
+
 def test_campaign_requires_approval(client):
     e=client.post('/api/v1/employees',json=employee_payload()).json(); s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"awareness","difficulty":"easy"}).json()
     assert client.post('/api/v1/campaigns',json={"scenario_id":s['id'],"name":"Blocked campaign"}).status_code==409
