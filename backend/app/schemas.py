@@ -10,8 +10,10 @@ class EmployeeOut(ORM):
 class HRRecordOut(BaseModel):
     external_id:str|None=None; full_name:str; email:str; department:str; role:str; preferred_language:str; privilege_level:int; access_sensitivity:int; social_exposure:int
 class HRSyncResult(BaseModel): provider:str; created:int; updated:int; total:int
-class RiskOut(ORM): id:str; employee_id:str; score:float; level:str; factors:dict; calculated_at:datetime
+class RiskFactor(BaseModel): key:str; label:str; category:str; weight:int; points:float; detail:str
+class RiskOut(ORM): id:str; employee_id:str; score:float; level:str; factors:list[RiskFactor]; calculated_at:datetime
 class ContextOut(ORM): id:str; employee_id:str; kind:str; title:str; summary:str; metadata_json:dict; created_at:datetime
+class ProfileOut(BaseModel): employee:EmployeeOut; risk:RiskOut; context:list[ContextOut]
 class ScenarioRequest(BaseModel): employee_id:str; objective:str="Improve phishing awareness"; difficulty:str=Field("medium",pattern="^(easy|medium|hard)$"); language:str|None=None
 class ScenarioOut(ORM):
     id:str; employee_id:str; status:str; language:str; objective:str; difficulty:str; subject:str; email_body:str; pretext:str; landing_page_message:str; training_objective:str; risk_indicators:list; safety_notes:list; created_at:datetime; approved_at:datetime|None

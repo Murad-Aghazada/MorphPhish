@@ -50,6 +50,10 @@ def get_risk(id:str,db:Session=Depends(get_db)):
 @router.get('/employees/{id}/context',response_model=list[ContextOut])
 def context(id:str,db:Session=Depends(get_db)):
     items=ensure_context(db,one(db,Employee,id)); db.commit(); return items
+@router.get('/employees/{id}/profile',response_model=ProfileOut)
+def profile(id:str,db:Session=Depends(get_db)):
+    e=one(db,Employee,id); rp=recalc_risk(db,e); items=ensure_context(db,e); db.commit()
+    return ProfileOut(employee=e,risk=rp,context=items)
 @router.get('/scenarios',response_model=list[ScenarioOut])
 def scenarios(db:Session=Depends(get_db)): return db.scalars(select(Scenario).order_by(Scenario.created_at.desc())).all()
 @router.post('/scenarios/generate',response_model=ScenarioOut,status_code=201)

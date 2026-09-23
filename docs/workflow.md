@@ -41,7 +41,7 @@ MorphPhish/
 
 ## Progress
 - **Week 1 — done:** git + workflow, RoE draft, Docker dev env, PostgreSQL schema, synthetic data.
-- **Week 2 — done:** HR data layer via adapter pattern (`MockHRAdapter` + `RestHRAdapter` stub, `POST /hr/sync`), role- and department-aware risk profile schema, profile CRUD endpoints, LLM integration (mock/OpenAI) with per-department prompt templates, multilingual (AZ/EN) generation.
+- **Week 2 — done:** HR data layer via adapter pattern (`MockHRAdapter` + `RestHRAdapter` stub, `POST /hr/sync`); explainable risk-profile schema weighted across role / department / language / data access / social exposure; profile endpoints incl. `/employees/{id}/profile`; shared prompt-template layer driving all providers; LLM integration for **mock / OpenAI (GPT) / Anthropic (Claude)**; difficulty-aware, multilingual (AZ/EN) generation.
 
 ## Team roles (fill in)
 | Module | Owner |

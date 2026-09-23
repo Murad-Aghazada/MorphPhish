@@ -10,10 +10,13 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     frontend_url: str = "http://localhost:3000"
     backend_url: str = "http://localhost:8000"
-    llm_provider: str = "mock"
+    llm_provider: str = "mock"          # mock | openai | anthropic
     llm_api_key: str = ""
-    llm_model: str = "gpt-5.6-luna"
+    llm_model: str = "gpt-4o-mini"
+    llm_max_tokens: int = 900
     openai_base_url: str = "https://api.openai.com/v1"
+    anthropic_base_url: str = "https://api.anthropic.com"
+    anthropic_version: str = "2023-06-01"
     hr_provider: str = "mock"
     hr_api_url: str = ""
     hr_api_key: str = ""

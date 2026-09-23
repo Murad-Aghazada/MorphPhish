@@ -72,13 +72,45 @@ def test_hr_source_and_idempotent_sync(client):
     assert len(emps) == len(src)
     assert all(e['source'] == 'mock-hr' and e['external_id'] for e in emps)
 
-def test_risk_is_role_aware(client):
+def _factor(risk, key):
+    return next(f['points'] for f in risk['factors'] if f['key'] == key)
+
+def test_risk_is_role_dept_language_aware(client):
     client.post('/api/v1/hr/sync')
     emps={e['role']: e['id'] for e in client.get('/api/v1/employees').json()}
     cfo=client.get(f"/api/v1/employees/{emps['Chief Financial Officer']}/risk").json()
     spec=client.get(f"/api/v1/employees/{emps['Marketing Specialist']}/risk").json()
-    assert cfo['factors']['role_seniority'] > spec['factors']['role_seniority']
+    assert _factor(cfo,'role_privilege') > _factor(spec,'role_privilege')
     assert cfo['score'] > spec['score']
+    # language is an explicit dimension of the profile schema
+    assert {'role_privilege','department_exposure','data_sensitivity','social_exposure','language_exposure'} <= {f['key'] for f in cfo['factors']}
+
+def test_profile_endpoint_bundles_persona_risk_context(client):
+    client.post('/api/v1/hr/sync')
+    eid=client.get('/api/v1/employees').json()[0]['id']
+    p=client.get(f"/api/v1/employees/{eid}/profile").json()
+    assert p['employee']['id']==eid and 0<=p['risk']['score']<=100 and len(p['context'])>=3
+
+def test_generation_multilingual_and_difficulty(client):
+    client.post('/api/v1/hr/sync')
+    emps=client.get('/api/v1/employees').json()
+    az=[e for e in emps if e['preferred_language']=='az'][0]
+    en=[e for e in emps if e['preferred_language']=='en'][0]
+    gen=lambda eid,d: client.post('/api/v1/scenarios/generate',json={"employee_id":eid,"objective":"x","difficulty":d}).json()
+    saz, sen = gen(az['id'],"medium"), gen(en['id'],"medium")
+    assert 'password' in saz['landing_page_message'].lower() and 'password' in sen['landing_page_message'].lower()
+    assert 'Salam' in saz['email_body']            # Azerbaijani output
+    assert saz['email_body'] != sen['email_body']  # language actually differs
+    easy, hard = gen(en['id'],"easy"), gen(en['id'],"hard")
+    assert easy['subject'] != hard['subject'] and easy['email_body'] != hard['email_body']
+
+def test_prompt_layer_builds_system_and_user():
+    from app.llm import prompts
+    payload={"employee":{"full_name":"Test User","department":"Finance","role":"Analyst","preferred_language":"az"},
+             "context":[{"title":"Finance access review"}],"objective":"x","difficulty":"hard"}
+    assert prompts.render_scenario(payload)['difficulty']=='hard'
+    system,user=prompts.build_prompt(payload)
+    assert 'Azerbaijani' in system and user['language']=='az'
 
 def test_campaign_requires_approval(client):
     e=client.post('/api/v1/employees',json=employee_payload()).json(); s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"awareness","difficulty":"easy"}).json()

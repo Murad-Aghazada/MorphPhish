@@ -11,6 +11,7 @@ Swagger is available at `/docs`.
 | GET/PATCH/DELETE | `/api/v1/employees/{id}` | Persona CRUD |
 | GET/POST | `/api/v1/employees/{id}/risk` | View/recalculate deterministic risk |
 | GET | `/api/v1/employees/{id}/context` | Synthetic operational context |
+| GET | `/api/v1/employees/{id}/profile` | Persona + risk (explainable factors) + context in one call |
 | GET | `/api/v1/scenarios` | List generated scenarios (newest first) |
 | POST | `/api/v1/scenarios/generate` | LLM/mock structured scenario generation (persists as REVIEW_REQUIRED) |
 | PATCH | `/api/v1/scenarios/{id}` | Edit an unapproved scenario; re-runs safety validation |

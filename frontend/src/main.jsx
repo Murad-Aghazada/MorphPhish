@@ -230,12 +230,11 @@ function Employees() {
 }
 function Employee() {
   const { id } = useParams();
-  const [e, er] = useLoad('/employees/' + id);
-  const [r] = useLoad('/employees/' + id + '/risk');
-  const [c] = useLoad('/employees/' + id + '/context');
+  const [p, er] = useLoad('/employees/' + id + '/profile');
   if (er) return <Err e={er} />;
-  if (!e || !r || !c) return <Load />;
-  const max = Math.max(1, ...Object.values(r.factors));
+  if (!p) return <Load />;
+  const { employee: e, risk: r, context: c } = p;
+  const max = Math.max(1, ...r.factors.map((f) => f.points));
   return (
     <>
       <Head eyebrow={e.department + ' · ' + e.role} title={e.full_name} />
@@ -246,6 +245,7 @@ function Employee() {
             <div className="field"><b>Department</b><p>{e.department}</p></div>
             <div className="field"><b>Role</b><p>{e.role}</p></div>
             <div className="field"><b>Preferred language</b><p className="mono">{e.preferred_language}</p></div>
+            <div className="field"><b>HR source</b><p><span className="badge">{e.source}</span> <span className="mono muted">{e.external_id}</span></p></div>
           </div>
         </div>
         <div className="card">
@@ -255,14 +255,15 @@ function Employee() {
             <Badge kind={r.level}>{r.level}</Badge>
           </div>
           <div style={{ marginTop: 16 }}>
-            {Object.entries(r.factors).map(([k, v]) => (
-              <div className="factor" key={k}>
-                <span className="fname">{titleCase(k)}</span>
-                <span className="ftrack"><i style={{ width: (v / max * 100) + '%' }} /></span>
-                <span className="fval">{v}</span>
+            {r.factors.map((f) => (
+              <div className="factor" key={f.key}>
+                <span className="fname">{f.label}<small className="muted"> · {f.detail}</small></span>
+                <span className="ftrack"><i style={{ width: (f.points / max * 100) + '%' }} /></span>
+                <span className="fval">{f.points}</span>
               </div>
             ))}
           </div>
+          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>Weighted across role, department, language, data access, and social exposure.</p>
         </div>
       </section>
       <div className="card">
