@@ -16,19 +16,29 @@ from . import prompts
 _TRANSIENT = {429, 500, 502, 503, 504}
 
 
-def _post_json(url, *, params=None, headers=None, json=None, timeout=40, retries=3):
-    """POST returning parsed JSON, retrying transient (429/5xx) responses with backoff."""
+def _post_json(url, *, params=None, headers=None, json=None, timeout=60, retries=3):
+    """POST returning parsed JSON, retrying transient failures (429/5xx and
+    read timeouts, e.g. serverless cold starts) with backoff."""
     last = None
     for attempt in range(retries):
-        with httpx.Client(timeout=timeout) as c:
-            r = c.post(url, params=params, headers=headers, json=json)
+        try:
+            with httpx.Client(timeout=timeout) as c:
+                r = c.post(url, params=params, headers=headers, json=json)
+        except httpx.TimeoutException as e:
+            last = e
+            if attempt < retries - 1:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise
         if r.status_code in _TRANSIENT and attempt < retries - 1:
             last = r
             time.sleep(1.5 * (attempt + 1))
             continue
         r.raise_for_status()
         return r.json()
-    last.raise_for_status()
+    if isinstance(last, httpx.Response):
+        last.raise_for_status()
+    raise last
 
 
 class LLMProvider(ABC):
@@ -38,9 +48,14 @@ class LLMProvider(ABC):
 
 def _extract_json(text: str) -> dict:
     text = (text or "").strip()
+    if not text:
+        raise RuntimeError("LLM returned an empty response")
     if text.startswith("```"):  # strip ```json ... ``` fences
         text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"LLM did not return valid JSON: {e}")
 
 
 def _validate_keys(data: dict) -> dict:
@@ -120,8 +135,36 @@ class GeminiProvider(LLMProvider):
         return _validate_keys(_extract_json(text))
 
 
+class NvidiaProvider(LLMProvider):
+    """NVIDIA NIM (integrate.api.nvidia.com) via the OpenAI-compatible Chat
+    Completions API. The same provider works for other OpenAI-compatible chat
+    endpoints by overriding NVIDIA_BASE_URL. Set LLM_MODEL to a catalog model
+    such as meta/llama-3.1-8b-instruct. Non-streaming JSON output."""
+    def generate(self, payload):
+        if not settings.llm_api_key:
+            raise RuntimeError("LLM_API_KEY is not configured")
+        system, user = prompts.build_prompt(payload)
+        body = {
+            "model": settings.llm_model,
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": json.dumps(user, ensure_ascii=False)}],
+            "max_tokens": settings.llm_max_tokens,
+            "temperature": 0.7,
+            "stream": False,
+            "response_format": {"type": "json_object"},
+        }
+        try:
+            data = _post_json(settings.nvidia_base_url.rstrip("/") + "/chat/completions",
+                              headers={"Authorization": f"Bearer {settings.llm_api_key}", "Content-Type": "application/json"}, json=body, timeout=120)
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"NVIDIA request failed: {e}")
+        text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        return _validate_keys(_extract_json(text))
+
+
 _PROVIDERS = {"mock": MockLLMProvider, "openai": OpenAIProvider, "anthropic": AnthropicProvider,
-              "gemini": GeminiProvider, "google": GeminiProvider, "aistudio": GeminiProvider}
+              "gemini": GeminiProvider, "google": GeminiProvider, "aistudio": GeminiProvider,
+              "nvidia": NvidiaProvider, "nim": NvidiaProvider}
 
 
 def get_llm_provider() -> LLMProvider:

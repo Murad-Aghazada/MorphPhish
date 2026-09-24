@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     anthropic_base_url: str = "https://api.anthropic.com"
     anthropic_version: str = "2023-06-01"
     gemini_base_url: str = "https://generativelanguage.googleapis.com"
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     hr_provider: str = "mock"
     hr_api_url: str = ""
     hr_api_key: str = ""
