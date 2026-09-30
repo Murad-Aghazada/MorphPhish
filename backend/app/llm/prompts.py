@@ -157,14 +157,19 @@ def _parts(payload):
     team = theme["team"][lang]
     asset = theme["asset"][lang]
     ctx = payload.get("context") or []
-    ctx_ref = (ctx[0].get("title") if ctx else None) or _DEFAULT_CTX[lang]
+    # Pretext anchor = the most suitable context item (highest anchor weight).
+    anchor = max(ctx, key=lambda c: c.get("anchor", 0)) if ctx else None
+    ctx_ref = (anchor.get("title") if anchor else None) or _DEFAULT_CTX[lang]
+    # Secondary cue = an upcoming calendar item, if any (used to enrich real-LLM prompts).
+    cals = [c for c in ctx if c.get("kind") == "calendar" and c.get("title")]
+    cue = cals[0]["title"] if cals else None
     objective = payload.get("objective") or "Recognize contextual social-engineering cues"
-    return lang, difficulty, dept, first, team, asset, ctx_ref, objective
+    return lang, difficulty, dept, first, team, asset, ctx_ref, cue, objective
 
 
 def render_scenario(payload):
     """Deterministically render a full scenario dict from the templates."""
-    lang, difficulty, dept, first, team, asset, ctx_ref, objective = _parts(payload)
+    lang, difficulty, dept, first, team, asset, ctx_ref, cue, objective = _parts(payload)
     return {
         "subject": _subject(lang, difficulty, asset, ctx_ref),
         "email_body": _body(lang, difficulty, first, team, asset, ctx_ref),
@@ -178,12 +183,13 @@ def render_scenario(payload):
 
 def build_prompt(payload):
     """Assemble (system, user) prompts for a real LLM, mirroring the templates."""
-    lang, difficulty, dept, first, team, asset, ctx_ref, objective = _parts(payload)
+    lang, difficulty, dept, first, team, asset, ctx_ref, cue, objective = _parts(payload)
+    cue_line = f"You may also nod to the upcoming '{cue}'. " if cue else ""
     system = (
         "You generate a single authorized phishing-awareness SIMULATION email for a training platform. "
         f"Write everything in {LANGUAGES[lang]}. "
         f"Impersonate the '{team}' team and reference the operational context titled '{ctx_ref}', "
-        f"targeting a {dept} employee. Difficulty is {difficulty}: {DIFFICULTY_GUIDANCE[difficulty]}. "
+        f"targeting a {dept} employee. {cue_line}Difficulty is {difficulty}: {DIFFICULTY_GUIDANCE[difficulty]}. "
         "The email_body must be 3-4 sentences and end with a call to action to use a secure portal link. "
         "SAFETY: use only the synthetic context provided; never include real URLs, malware, scripts, "
         "executable payloads, credential-harvesting instructions, or evasion guidance. "

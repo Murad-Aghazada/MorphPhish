@@ -77,7 +77,7 @@ def edit_scenario(id:str,body:ScenarioUpdate,db:Session=Depends(get_db)):
     for k,v in body.model_dump(exclude_unset=True).items(): setattr(s,k,v)
     try: s.safety_notes=revalidate_scenario(s)
     except ValueError as e: db.rollback(); raise HTTPException(422,str(e))
-    audit(db,"scenario_edited","scenario",s.id); db.commit(); return s
+    score_scenario(db,s); audit(db,"scenario_edited","scenario",s.id); db.commit(); return s
 @router.post('/scenarios/{id}/launch',response_model=LaunchOut)
 def launch_scenario(id:str,body:ScenarioLaunchRequest|None=None,db:Session=Depends(get_db)):
     s=one(db,Scenario,id)
@@ -120,7 +120,7 @@ def event(session_id:str,body:EventIn,db:Session=Depends(get_db)):
     t=db.scalar(select(CampaignTarget).where(CampaignTarget.session_id==session_id))
     if not t: raise HTTPException(404,"Simulation session not found")
     # Deliberately discard body.password. It is never stored, hashed, logged, forwarded, or included in metadata.
-    meta={"credential_submitted":True} if body.event_type=="credential_simulation_submitted" else {}
+    meta={"credential_submitted":True,"credential_stored":False} if body.event_type=="credential_simulation_submitted" else {}
     ev=InteractionEvent(campaign_id=t.campaign_id,employee_id=t.employee_id,session_id=session_id,event_type=body.event_type,safe_metadata=meta); db.add(ev); db.flush(); audit(db,"simulation_event","campaign",t.campaign_id,{"event_type":body.event_type}); db.commit(); return ev
 @router.get('/analytics')
 def analytics_all(db:Session=Depends(get_db)):

@@ -9,8 +9,8 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import select
 from .db import SessionLocal
 from .models import Employee, Scenario, Campaign, CampaignTarget, InteractionEvent, ScenarioStatus, CampaignStatus
-from .services import sync_from_hr, recalc_risk, ensure_context
-from .llm.prompts import render_scenario
+from .services import sync_from_hr, recalc_risk, ensure_context, assess_quality
+from .llm.prompts import render_scenario, normalize_language
 
 # email, difficulty, days-ago, [(event_type, minutes-after-delivery)]
 DEMO = [
@@ -54,11 +54,13 @@ def seed():
                 "difficulty": difficulty,
             }
             data = render_scenario(payload)
+            q_score, q_notes = assess_quality(data, payload["context"], normalize_language(e.preferred_language))
             s = Scenario(employee_id=e.id, status=ScenarioStatus.ACTIVE.value, language=e.preferred_language,
                          objective=payload["objective"], difficulty=difficulty,
                          subject=data["subject"], email_body=data["email_body"], pretext=data["pretext"],
                          landing_page_message=data["landing_page_message"], training_objective=data["training_objective"],
-                         risk_indicators=data["risk_indicators"], safety_notes=["Synthetic only"], approved_at=_now())
+                         risk_indicators=data["risk_indicators"], safety_notes=["Synthetic only"],
+                         quality_score=q_score, quality_notes=q_notes, approved_at=_now())
             db.add(s); db.flush()
             base = _now() - timedelta(days=days_ago)
             c = Campaign(scenario_id=s.id, name=f"{e.department} awareness baseline", status=CampaignStatus.ACTIVE.value,

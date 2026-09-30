@@ -11,7 +11,7 @@ def test_end_to_end_and_password_never_persisted(client):
     launch=client.post(f"/api/v1/campaigns/{c['id']}/launch").json(); session=launch['session_id']
     secret='RealPasswordThatMustNeverPersist!123'
     ev=client.post(f'/api/v1/simulation/{session}/event',json={"session_id":session,"event_type":"credential_simulation_submitted","password":secret}).json()
-    assert ev['safe_metadata']=={"credential_submitted":True}; assert secret not in str(ev)
+    assert ev['safe_metadata']=={"credential_submitted":True,"credential_stored":False}; assert secret not in str(ev)
     audit=client.get('/api/v1/audit').text; assert secret not in audit
     a=client.get(f"/api/v1/campaigns/{c['id']}/analytics").json(); assert a['submission_rate']==100.0
 
@@ -104,6 +104,44 @@ def test_generation_multilingual_and_difficulty(client):
     easy, hard = gen(en['id'],"easy"), gen(en['id'],"hard")
     assert easy['subject'] != hard['subject'] and easy['email_body'] != hard['email_body']
 
+def test_operational_context_is_rich_and_varied(client):
+    client.post('/api/v1/hr/sync')
+    emps=client.get('/api/v1/employees').json()
+    a=client.get(f"/api/v1/employees/{emps[0]['id']}/context").json()
+    b=client.get(f"/api/v1/employees/{emps[1]['id']}/context").json()
+    kinds={i['kind'] for i in a}
+    assert {'ticket','calendar','communication'} <= kinds          # three synthetic sources
+    tickets=[i for i in a if i['kind']=='ticket']
+    assert all(i['metadata_json'].get('ticket_id') and i['metadata_json'].get('priority') for i in tickets)
+    # communication metadata never carries message content
+    comms=[i for i in a if i['kind']=='communication'][0]
+    assert comms['metadata_json'].get('content_excluded') is True
+    # different personas get different tickets
+    ids_a={i['metadata_json']['ticket_id'] for i in a if i['kind']=='ticket'}
+    ids_b={i['metadata_json']['ticket_id'] for i in b if i['kind']=='ticket'}
+    assert ids_a != ids_b
+
+def test_scenario_has_quality_assessment(client):
+    e=client.post('/api/v1/employees',json=employee_payload('q@demo.example.com')).json()
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
+    assert isinstance(s['quality_score'],(int,float)) and 0<=s['quality_score']<=100
+    assert isinstance(s['quality_notes'],list)
+
+def test_no_credential_persisted_anywhere(client):
+    from app.db import engine, Base
+    e=client.post('/api/v1/employees',json=employee_payload('vault@demo.example.com')).json()
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
+    client.post(f"/api/v1/scenarios/{s['id']}/approve")
+    launch=client.post(f"/api/v1/scenarios/{s['id']}/launch").json()
+    secret="SuperSecret_NeverStore_991155"
+    ev=client.post(f"/api/v1/simulation/{launch['session_id']}/event",json={"session_id":launch['session_id'],"event_type":"credential_simulation_submitted","password":secret})
+    assert ev.status_code==201
+    # the submitted value must not appear in ANY row of ANY table
+    with engine.connect() as conn:
+        for table in Base.metadata.sorted_tables:
+            blob=" ".join(str(v) for row in conn.execute(table.select()).fetchall() for v in row)
+            assert secret not in blob, f"secret leaked into {table.name}"
+
 def test_prompt_layer_builds_system_and_user():
     from app.llm import prompts
     payload={"employee":{"full_name":"Test User","department":"Finance","role":"Analyst","preferred_language":"az"},
@@ -117,7 +155,10 @@ def test_russian_generation(client):
     # explicit language override also works
     s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium","language":"ru"}).json()
     assert 'Здравствуйте' in s['email_body']                       # Cyrillic Russian output
-    assert 'Проверка доступа' in s['email_body']                    # operational context localized, not English
+    # the chosen context anchor is woven into the body, localized (not English)
+    ctx=client.get(f"/api/v1/employees/{e['id']}/context").json()
+    anchor=max(ctx,key=lambda c:c['metadata_json'].get('anchor',0))
+    assert anchor['title'] in s['email_body']
     assert 'password' in s['landing_page_message'].lower()          # safety words retained
     assert 'simulation' in s['landing_page_message'].lower()
     from app.llm import prompts

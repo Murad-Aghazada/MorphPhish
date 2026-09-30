@@ -270,7 +270,16 @@ function Employee() {
         <h3>Synthetic operational context</h3>
         {c.map((x) => (
           <div className="scen" key={x.id} style={{ paddingBottom: 6 }}>
-            <div className="field"><b>{x.kind} · {x.title}</b><p>{x.summary}</p></div>
+            <div className="field"><b>{x.kind} · {x.title}</b><p>{x.summary}</p>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                {x.metadata_json.ticket_id && <span className="badge mono">{x.metadata_json.ticket_id}</span>}
+                {x.metadata_json.priority && <span className={'badge ' + (x.metadata_json.priority === 'high' ? 'high' : 'medium')}>{x.metadata_json.priority}</span>}
+                {x.metadata_json.due_in_days != null && <span className="badge">due in {x.metadata_json.due_in_days}d</span>}
+                {x.metadata_json.in_days != null && <span className="badge">in {x.metadata_json.in_days}d</span>}
+                {x.metadata_json.channel && <span className="badge mono">{x.metadata_json.channel}</span>}
+                {x.metadata_json.thread_count != null && <span className="badge">{x.metadata_json.thread_count} threads · {x.metadata_json.participants} people</span>}
+              </div>
+            </div>
           </div>
         ))}
       </div>
@@ -293,7 +302,14 @@ function ScenarioCard({ s, onChange }) {
   const doLaunch = async () => { const r = await run(() => api(`/scenarios/${s.id}/launch`, { method: 'POST', body: JSON.stringify({}) }), 'Simulation launched.'); if (r) setLaunch(r); };
   return (
     <div className="card scen">
-      <div className="row"><h3 style={{ margin: 0, maxWidth: '80%' }}>{s.subject}</h3><Badge kind={'status-' + s.status.toLowerCase()}>{s.status.replace('_', ' ')}</Badge></div>
+      <div className="row"><h3 style={{ margin: 0, maxWidth: '70%' }}>{s.subject}</h3>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {s.quality_score != null && <Badge kind={s.quality_score >= 80 ? 'low' : s.quality_score >= 50 ? 'medium' : 'high'} title="Automated quality score">Q {Math.round(s.quality_score)}</Badge>}
+          <Badge kind={'status-' + s.status.toLowerCase()}>{s.status.replace('_', ' ')}</Badge>
+        </div>
+      </div>
+      {s.quality_notes && s.quality_notes.length > 0 && EDITABLE.has(s.status) &&
+        <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>Review notes: {s.quality_notes.join(' · ')}</p>}
       {edit ? (
         <div className="editform">
           <label>Subject</label>

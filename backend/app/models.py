@@ -31,7 +31,7 @@ class Scenario(Base):
     id:Mapped[str]=mapped_column(String,primary_key=True,default=uid); employee_id:Mapped[str]=mapped_column(ForeignKey("employees.id",ondelete="CASCADE"),index=True)
     status:Mapped[str]=mapped_column(String(30),default=ScenarioStatus.DRAFT.value,index=True); language:Mapped[str]=mapped_column(String(10)); objective:Mapped[str]=mapped_column(String(160)); difficulty:Mapped[str]=mapped_column(String(20))
     subject:Mapped[str]=mapped_column(String(255)); email_body:Mapped[str]=mapped_column(Text); pretext:Mapped[str]=mapped_column(Text); landing_page_message:Mapped[str]=mapped_column(Text); training_objective:Mapped[str]=mapped_column(Text); risk_indicators:Mapped[list]=mapped_column(JSON,default=list)
-    safety_notes:Mapped[list]=mapped_column(JSON,default=list); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now); approved_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    safety_notes:Mapped[list]=mapped_column(JSON,default=list); quality_score:Mapped[float|None]=mapped_column(Float,nullable=True); quality_notes:Mapped[list]=mapped_column(JSON,default=list); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now); approved_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
 class Campaign(Base):
     __tablename__="campaigns"
     id:Mapped[str]=mapped_column(String,primary_key=True,default=uid); scenario_id:Mapped[str]=mapped_column(ForeignKey("scenarios.id",ondelete="CASCADE"),index=True); name:Mapped[str]=mapped_column(String(180)); status:Mapped[str]=mapped_column(String(30),default=CampaignStatus.DRAFT.value,index=True)

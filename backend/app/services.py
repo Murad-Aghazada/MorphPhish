@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -62,13 +63,45 @@ def validate_scenario(data):
 def revalidate_scenario(scenario):
     return validate_scenario({"subject":scenario.subject,"email_body":scenario.email_body,"pretext":scenario.pretext,"landing_page_message":scenario.landing_page_message})
 
+def _lang_ok(text,lang):
+    has_cyrillic=bool(re.search(r"[а-яА-ЯёЁ]",text or ""))
+    return has_cyrillic if lang=="ru" else not has_cyrillic
+
+def assess_quality(data,ctx_localized,lang):
+    """Heuristic quality score (0-100) + notes to guide manual review.
+
+    Checks whether the scenario references the operational context, has an
+    appropriately sized body, enough risk indicators, a reasonable subject,
+    matches the requested language, and carries the safety disclosure.
+    """
+    subject=(data.get("subject") or ""); body=(data.get("email_body") or "")
+    text=(subject+" "+body).lower(); score=0; notes=[]
+    anchors=[(c.get("title") or "") for c in (ctx_localized or [])]
+    tokens=[t for a in anchors for t in re.split(r"\W+",a.lower()) if len(t)>3]
+    if any(t in text for t in tokens): score+=25
+    else: notes.append("Does not clearly reference operational context")
+    sentences=[s for s in re.split(r"[.!?…]+",body) if s.strip()]
+    if 3<=len(sentences)<=5: score+=20
+    else: notes.append(f"Body has {len(sentences)} sentences (aim for 3-5)")
+    if len(data.get("risk_indicators") or [])>=3: score+=15
+    else: notes.append("Fewer than 3 risk indicators")
+    if 15<=len(subject)<=90: score+=15
+    else: notes.append("Subject length outside the 15-90 character range")
+    if _lang_ok(body,lang): score+=15
+    else: notes.append(f"Body may not be written in the requested language ({lang})")
+    landing=(data.get("landing_page_message") or "").lower()
+    if "simulation" in landing and "password" in landing: score+=10
+    else: notes.append("Landing page missing the required safety disclosure")
+    return score,notes
+
 def _localize_context(ctx,lang):
     out=[]
     for x in ctx:
         meta=x.metadata_json or {}
         title=(meta.get("title_i18n") or {}).get(lang) or x.title
         summary=(meta.get("summary_i18n") or {}).get(lang) or x.summary
-        out.append({"kind":x.kind,"title":title,"summary":summary})
+        out.append({"kind":x.kind,"title":title,"summary":summary,"anchor":meta.get("anchor",0),
+                    "meta":{k:v for k,v in meta.items() if k not in ("title_i18n","summary_i18n")}})
     return out
 
 def generate_scenario(db,employee,objective,difficulty,language):
@@ -78,7 +111,15 @@ def generate_scenario(db,employee,objective,difficulty,language):
     data=get_llm_provider().generate(payload)
     data["landing_page_message"]=safe_landing(target_lang)  # safety-critical text is enforced by us, not the LLM
     notes=validate_scenario(data)
-    s=Scenario(employee_id=employee.id,status=ScenarioStatus.REVIEW_REQUIRED.value,language=language or employee.preferred_language,objective=objective,difficulty=difficulty,subject=data["subject"],email_body=data["email_body"],pretext=data["pretext"],landing_page_message=data["landing_page_message"],training_objective=data["training_objective"],risk_indicators=data["risk_indicators"],safety_notes=notes); db.add(s); db.flush(); audit(db,"scenario_generated","scenario",s.id,{"provider":"configured"}); return s
+    q_score,q_notes=assess_quality(data,payload["context"],target_lang)
+    s=Scenario(employee_id=employee.id,status=ScenarioStatus.REVIEW_REQUIRED.value,language=language or employee.preferred_language,objective=objective,difficulty=difficulty,subject=data["subject"],email_body=data["email_body"],pretext=data["pretext"],landing_page_message=data["landing_page_message"],training_objective=data["training_objective"],risk_indicators=data["risk_indicators"],safety_notes=notes,quality_score=q_score,quality_notes=q_notes); db.add(s); db.flush(); audit(db,"scenario_generated","scenario",s.id,{"provider":"configured","quality":q_score}); return s
+
+def score_scenario(db,scenario):
+    emp=db.get(Employee,scenario.employee_id); lang=normalize_language(scenario.language)
+    ctx=_localize_context(ensure_context(db,emp),lang) if emp else []
+    data={"subject":scenario.subject,"email_body":scenario.email_body,"risk_indicators":scenario.risk_indicators,"landing_page_message":scenario.landing_page_message}
+    scenario.quality_score,scenario.quality_notes=assess_quality(data,ctx,lang)
+    return scenario.quality_score,scenario.quality_notes
 
 def launch_campaign(db,campaign,scenario,employee):
     if scenario.status!=ScenarioStatus.APPROVED.value: raise ValueError("Scenario must be approved before campaign launch")
