@@ -188,3 +188,29 @@ def test_regenerate_updates_in_place(client):
 def test_campaign_requires_approval(client):
     e=client.post('/api/v1/employees',json=employee_payload()).json(); s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"awareness","difficulty":"easy"}).json()
     assert client.post('/api/v1/campaigns',json={"scenario_id":s['id'],"name":"Blocked campaign"}).status_code==409
+
+def test_llm_response_is_coerced_to_valid_scenario():
+    # A real LLM can return partial / wrong-typed / non-JSON content. Coercion
+    # must always yield a schema-valid scenario (filling gaps from the template)
+    # so a flaky model never surfaces as a 500/503 to the user.
+    from app.llm import providers
+    payload={"employee":{"full_name":"Test User","department":"Finance","role":"Analyst","preferred_language":"az"},
+             "context":[{"title":"Finance access review","anchor":9}],"objective":"x","difficulty":"medium"}
+    required=providers.prompts.SCENARIO_SCHEMA["required"]
+    for raw in [
+        {},                                                   # model returned nothing usable
+        {"subject":"Only a subject"},                         # missing most keys
+        {"risk_indicators":"not-a-list","pretext":123},       # wrong types
+        {"scenario":{"subject":"Wrapped","email_body":"b"}},  # single-key envelope
+        "this is not an object",                              # not even a dict
+    ]:
+        out=providers._coerce_scenario(raw if isinstance(raw,dict) else {},payload)
+        assert all(k in out for k in required)                # every required key present
+        assert all(isinstance(out[k],str) and out[k] for k in required if k!="risk_indicators")
+        assert isinstance(out["risk_indicators"],list) and all(isinstance(x,str) for x in out["risk_indicators"])
+    # a good value from the model is preserved, not overwritten by the template
+    kept=providers._coerce_scenario({"subject":"Kept subject","risk_indicators":["a","b","c"]},payload)
+    assert kept["subject"]=="Kept subject" and kept["risk_indicators"]==["a","b","c"]
+    # tolerant extraction salvages JSON from fenced / prose-wrapped text and never raises
+    assert providers._extract_json("```json\n{\"subject\":\"x\"}\n```")=={"subject":"x"}
+    assert providers._extract_json("garbage, no json here")=={}

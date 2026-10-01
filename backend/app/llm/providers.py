@@ -8,11 +8,12 @@ All providers share the prompt-engineering layer in `prompts.py`:
 Selected by settings.llm_provider (mock | openai | anthropic).
 """
 from abc import ABC, abstractmethod
-import json, re, time
+import json, logging, re, time
 import httpx
 from app.core.config import settings
 from . import prompts
 
+log = logging.getLogger("app.llm")
 _TRANSIENT = {429, 500, 502, 503, 504}
 
 
@@ -47,22 +48,70 @@ class LLMProvider(ABC):
 
 
 def _extract_json(text: str) -> dict:
+    """Best-effort parse of a model's text into a dict. Returns {} instead of
+    raising so a malformed content response degrades to the template baseline
+    (see _coerce_scenario) rather than surfacing as a 500/503."""
     text = (text or "").strip()
-    if not text:
-        raise RuntimeError("LLM returned an empty response")
     if text.startswith("```"):  # strip ```json ... ``` fences
         text = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", text).strip()
+    if not text:
+        return {}
     try:
-        return json.loads(text)
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"LLM did not return valid JSON: {e}")
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", text, re.DOTALL)  # salvage the first {...} block
+        if not m:
+            return {}
+        try:
+            data = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            return {}
+    return data if isinstance(data, dict) else {}
 
 
-def _validate_keys(data: dict) -> dict:
-    missing = [k for k in prompts.SCENARIO_SCHEMA["required"] if k not in data]
-    if missing:
-        raise RuntimeError(f"LLM response missing keys: {', '.join(missing)}")
-    return data
+# Scenario fields that must be non-empty strings.
+_STR_FIELDS = ("subject", "email_body", "pretext", "landing_page_message", "training_objective", "difficulty")
+
+
+def _coerce_scenario(raw: dict, payload: dict) -> dict:
+    """Merge a real LLM response onto the deterministic template so the result
+    is ALWAYS schema-valid. Any field the model omitted or returned with the
+    wrong type falls back to the template, which prevents a flaky model response
+    (missing keys, a list where an object was expected, prose instead of JSON)
+    from surfacing as an opaque 500/503. Safety-critical landing text is still
+    re-enforced downstream by generate_scenario regardless of what we keep here."""
+    base = prompts.render_scenario(payload)
+    if not isinstance(raw, dict):
+        raw = {}
+    # Unwrap a single-key envelope like {"scenario": {...}}.
+    if raw and not any(k in raw for k in base) and len(raw) == 1:
+        inner = next(iter(raw.values()))
+        if isinstance(inner, dict):
+            raw = inner
+    out = dict(base)
+    kept = []
+    for k in _STR_FIELDS:
+        v = raw.get(k)
+        if isinstance(v, str) and v.strip():
+            out[k] = v.strip()
+            kept.append(k)
+    if out.get("difficulty") not in prompts.DIFFICULTIES:
+        out["difficulty"] = base["difficulty"]
+    ri = raw.get("risk_indicators")
+    if isinstance(ri, str):
+        inds = [ri.strip()] if ri.strip() else []
+    elif isinstance(ri, dict):
+        inds = [str(x).strip() for x in ri.values() if str(x).strip()]
+    elif isinstance(ri, list):
+        inds = [str(x).strip() for x in ri if str(x).strip()]
+    else:
+        inds = []
+    if inds:
+        out["risk_indicators"] = inds
+        kept.append("risk_indicators")
+    if len(kept) < 3:
+        log.warning("LLM response was sparse/malformed; filled most fields from template (kept: %s)", kept or "none")
+    return out
 
 
 class MockLLMProvider(LLMProvider):
@@ -87,7 +136,7 @@ class OpenAIProvider(LLMProvider):
         except httpx.HTTPError as e:
             raise RuntimeError(f"OpenAI request failed: {e}")
         text = "".join(x.get("text", "") for item in data.get("output", []) for x in item.get("content", []) if x.get("type") == "output_text")
-        return _validate_keys(_extract_json(text))
+        return _coerce_scenario(_extract_json(text), payload)
 
 
 class AnthropicProvider(LLMProvider):
@@ -107,7 +156,7 @@ class AnthropicProvider(LLMProvider):
         except httpx.HTTPError as e:
             raise RuntimeError(f"Anthropic request failed: {e}")
         text = "".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text")
-        return _validate_keys(_extract_json(text))
+        return _coerce_scenario(_extract_json(text), payload)
 
 
 class GeminiProvider(LLMProvider):
@@ -132,7 +181,7 @@ class GeminiProvider(LLMProvider):
         except httpx.HTTPError as e:
             raise RuntimeError(f"Gemini request failed: {e}")
         text = "".join(p.get("text", "") for cand in data.get("candidates", []) for p in cand.get("content", {}).get("parts", []))
-        return _validate_keys(_extract_json(text))
+        return _coerce_scenario(_extract_json(text), payload)
 
 
 class NvidiaProvider(LLMProvider):
@@ -159,7 +208,7 @@ class NvidiaProvider(LLMProvider):
         except httpx.HTTPError as e:
             raise RuntimeError(f"NVIDIA request failed: {e}")
         text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
-        return _validate_keys(_extract_json(text))
+        return _coerce_scenario(_extract_json(text), payload)
 
 
 _PROVIDERS = {"mock": MockLLMProvider, "openai": OpenAIProvider, "anthropic": AnthropicProvider,
