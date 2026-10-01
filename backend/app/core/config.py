@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     app_name: str = "MorphPhish"
     app_env: str = "development"
     app_secret_key: str = "change-me"
+    admin_username: str = "root"
+    admin_password: str = "root"
     database_url: str = "sqlite:///./riskintern.db"
     cors_origins: str = "http://localhost:3000"
     frontend_url: str = "http://localhost:3000"

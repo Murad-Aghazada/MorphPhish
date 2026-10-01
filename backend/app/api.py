@@ -1,5 +1,7 @@
+import secrets
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 from .db import get_db
@@ -8,6 +10,12 @@ from .schemas import *
 from .services import *
 from .core.config import settings
 router=APIRouter(prefix="/api/v1")
+_basic=HTTPBasic(auto_error=True)
+
+def require_admin(credentials:HTTPBasicCredentials=Depends(_basic)):
+    ok=secrets.compare_digest(credentials.username,settings.admin_username) and secrets.compare_digest(credentials.password,settings.admin_password)
+    if not ok: raise HTTPException(401,"Invalid admin credentials",headers={"WWW-Authenticate":"Basic"})
+    return credentials.username
 
 def one(db,model,id):
     x=db.get(model,id)
@@ -78,8 +86,15 @@ def edit_scenario(id:str,body:ScenarioUpdate,db:Session=Depends(get_db)):
     try: s.safety_notes=revalidate_scenario(s)
     except ValueError as e: db.rollback(); raise HTTPException(422,str(e))
     score_scenario(db,s); audit(db,"scenario_edited","scenario",s.id); db.commit(); return s
+@router.post('/scenarios/{id}/regenerate',response_model=ScenarioOut)
+def regenerate(id:str,db:Session=Depends(get_db)):
+    s=one(db,Scenario,id)
+    if s.status not in EDITABLE: raise HTTPException(409,"Only unapproved scenarios can be regenerated")
+    try: regenerate_scenario(db,s); db.commit(); return s
+    except ValueError as e: db.rollback(); raise HTTPException(422,str(e))
+    except RuntimeError as e: db.rollback(); raise HTTPException(503,str(e))
 @router.post('/scenarios/{id}/launch',response_model=LaunchOut)
-def launch_scenario(id:str,body:ScenarioLaunchRequest|None=None,db:Session=Depends(get_db)):
+def launch_scenario(id:str,body:ScenarioLaunchRequest|None=None,admin:str=Depends(require_admin),db:Session=Depends(get_db)):
     s=one(db,Scenario,id)
     if s.status!=ScenarioStatus.APPROVED.value: raise HTTPException(409,"Scenario must be approved before launch")
     e=one(db,Employee,s.employee_id)
@@ -97,7 +112,7 @@ def create_campaign(body:CampaignCreate,db:Session=Depends(get_db)):
     name=body.name or f"{s.subject[:60]} — {datetime.now(timezone.utc):%Y-%m-%d %H:%M}"
     c=Campaign(scenario_id=s.id,name=name,provider=settings.campaign_provider); db.add(c); db.flush(); audit(db,"campaign_created","campaign",c.id); db.commit(); return c
 @router.post('/campaigns/{id}/launch',response_model=LaunchOut)
-def launch(id:str,db:Session=Depends(get_db)):
+def launch(id:str,admin:str=Depends(require_admin),db:Session=Depends(get_db)):
     c=one(db,Campaign,id); s=one(db,Scenario,c.scenario_id); e=one(db,Employee,s.employee_id)
     if c.status!=CampaignStatus.DRAFT.value: raise HTTPException(409,"Campaign is not in DRAFT state")
     try: t=launch_campaign(db,c,s,e); db.commit()

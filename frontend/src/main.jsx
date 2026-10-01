@@ -294,12 +294,19 @@ function ScenarioCard({ s, onChange }) {
   const [edit, setEdit] = useState(false);
   const [f, setF] = useState({ subject: s.subject, email_body: s.email_body, pretext: s.pretext, landing_page_message: s.landing_page_message });
   const [launch, setLaunch] = useState(null);
+  const [auth, setAuth] = useState(false);
+  const [cred, setCred] = useState({ u: '', p: '' });
   const editable = EDITABLE.has(s.status);
   const run = async (fn, ok) => { try { const r = await fn(); if (ok) toast(ok, 'ok'); onChange(); return r; } catch (x) { toast(x.message, 'err'); } };
   const save = () => run(async () => { await api(`/scenarios/${s.id}`, { method: 'PATCH', body: JSON.stringify(f) }); setEdit(false); }, 'Message updated.');
   const act = (path, ok) => run(() => api(`/scenarios/${s.id}/${path}`, { method: 'POST' }), ok);
-  const regen = () => run(() => api('/scenarios/generate', { method: 'POST', body: JSON.stringify({ employee_id: s.employee_id, objective: s.objective, difficulty: s.difficulty }) }), 'Fresh version generated below.');
-  const doLaunch = async () => { const r = await run(() => api(`/scenarios/${s.id}/launch`, { method: 'POST', body: JSON.stringify({}) }), 'Simulation launched.'); if (r) setLaunch(r); };
+  // Regenerate updates THIS scenario in place (no new card).
+  const regen = () => run(() => api(`/scenarios/${s.id}/regenerate`, { method: 'POST' }), 'Scenario regenerated.');
+  const doLaunch = async () => {
+    const auth64 = btoa(`${cred.u}:${cred.p}`);
+    const r = await run(() => api(`/scenarios/${s.id}/launch`, { method: 'POST', headers: { Authorization: 'Basic ' + auth64 }, body: JSON.stringify({}) }), 'Simulation launched.');
+    if (r) { setLaunch(r); setAuth(false); setCred({ u: '', p: '' }); }
+  };
   return (
     <div className="card scen">
       <div className="row"><h3 style={{ margin: 0, maxWidth: '70%' }}>{s.subject}</h3>
@@ -337,7 +344,20 @@ function ScenarioCard({ s, onChange }) {
           {editable && <button className="secondary" onClick={regen}>Regenerate</button>}
           {s.status === 'REVIEW_REQUIRED' && <button onClick={() => act('approve', 'Scenario approved.')}>Approve</button>}
           {editable && <button className="ghost" onClick={() => act('reject', 'Scenario rejected.')}>Reject</button>}
-          {s.status === 'APPROVED' && <button onClick={doLaunch}>Launch simulation</button>}
+          {s.status === 'APPROVED' && !auth && <button onClick={() => setAuth(true)}>Launch simulation</button>}
+        </div>
+      )}
+      {!edit && auth && (
+        <div className="editform" style={{ maxWidth: 360 }}>
+          <label>Admin sign-in required to launch</label>
+          <input placeholder="username" value={cred.u} onChange={(e) => setCred({ ...cred, u: e.target.value })} />
+          <input placeholder="password" type="password" value={cred.p} onChange={(e) => setCred({ ...cred, p: e.target.value })}
+            onKeyDown={(e) => e.key === 'Enter' && doLaunch()} />
+          <div className="actions">
+            <button disabled={!cred.u || !cred.p} onClick={doLaunch}>Confirm &amp; launch</button>
+            <button className="secondary" onClick={() => { setAuth(false); setCred({ u: '', p: '' }); }}>Cancel</button>
+          </div>
+          <span className="muted" style={{ fontSize: 12 }}>Demo credentials: root / root</span>
         </div>
       )}
       {launch && (

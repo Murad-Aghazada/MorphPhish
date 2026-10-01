@@ -1,3 +1,4 @@
+ADMIN={"Authorization":"Basic cm9vdDpyb290"}  # root:root
 def employee_payload(email='test@demo.example.com'):
  return {"full_name":"Test User","email":email,"department":"Finance","role":"Analyst","preferred_language":"az","privilege_level":3,"access_sensitivity":4,"social_exposure":4}
 def test_health(client): assert client.get('/api/v1/health').status_code==200
@@ -8,7 +9,7 @@ def test_end_to_end_and_password_never_persisted(client):
     s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"link inspection","difficulty":"medium"}).json(); assert s['status']=='REVIEW_REQUIRED'
     s=client.post(f"/api/v1/scenarios/{s['id']}/approve").json(); assert s['status']=='APPROVED'
     c=client.post('/api/v1/campaigns',json={"scenario_id":s['id'],"name":"Test Campaign"}).json()
-    launch=client.post(f"/api/v1/campaigns/{c['id']}/launch").json(); session=launch['session_id']
+    launch=client.post(f"/api/v1/campaigns/{c['id']}/launch",headers=ADMIN).json(); session=launch['session_id']
     secret='RealPasswordThatMustNeverPersist!123'
     ev=client.post(f'/api/v1/simulation/{session}/event',json={"session_id":session,"event_type":"credential_simulation_submitted","password":secret}).json()
     assert ev['safe_metadata']=={"credential_submitted":True,"credential_stored":False}; assert secret not in str(ev)
@@ -39,12 +40,12 @@ def test_edit_and_one_click_launch(client):
     # unsafe edit (landing loses required safety wording) is rejected
     assert client.patch(f"/api/v1/scenarios/{s['id']}",json={"landing_page_message":"Please log in now."}).status_code==422
     # launch before approval is blocked
-    assert client.post(f"/api/v1/scenarios/{s['id']}/launch").status_code==409
+    assert client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).status_code==409
     client.post(f"/api/v1/scenarios/{s['id']}/approve")
     # editing an approved scenario is blocked
     assert client.patch(f"/api/v1/scenarios/{s['id']}",json={"subject":"x"}).status_code==409
     # one-click launch
-    launch=client.post(f"/api/v1/scenarios/{s['id']}/launch")
+    launch=client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN)
     assert launch.status_code==200
     body=launch.json()
     assert body['session_id'] and body['simulation_url'].endswith('/simulate/'+body['session_id'])
@@ -53,7 +54,7 @@ def test_simulation_returns_full_message(client):
     e=client.post('/api/v1/employees',json=employee_payload('sim@demo.example.com')).json()
     s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"awareness","difficulty":"medium"}).json()
     client.post(f"/api/v1/scenarios/{s['id']}/approve")
-    launch=client.post(f"/api/v1/scenarios/{s['id']}/launch").json()
+    launch=client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).json()
     sim=client.get(f"/api/v1/simulation/{launch['session_id']}").json()
     for k in ("sender","recipient","subject","email_body","pretext","landing_page_message"):
         assert sim.get(k), f"simulation missing {k}"
@@ -132,7 +133,7 @@ def test_no_credential_persisted_anywhere(client):
     e=client.post('/api/v1/employees',json=employee_payload('vault@demo.example.com')).json()
     s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
     client.post(f"/api/v1/scenarios/{s['id']}/approve")
-    launch=client.post(f"/api/v1/scenarios/{s['id']}/launch").json()
+    launch=client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).json()
     secret="SuperSecret_NeverStore_991155"
     ev=client.post(f"/api/v1/simulation/{launch['session_id']}/event",json={"session_id":launch['session_id'],"event_type":"credential_simulation_submitted","password":secret})
     assert ev.status_code==201
@@ -163,6 +164,26 @@ def test_russian_generation(client):
     assert 'simulation' in s['landing_page_message'].lower()
     from app.llm import prompts
     assert prompts.normalize_language('ru') == 'ru' and 'Russian' in prompts.LANGUAGES.values()
+
+def test_launch_requires_admin_credentials(client):
+    import base64
+    e=client.post('/api/v1/employees',json=employee_payload('auth@demo.example.com')).json()
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
+    client.post(f"/api/v1/scenarios/{s['id']}/approve")
+    assert client.post(f"/api/v1/scenarios/{s['id']}/launch").status_code==401          # no creds
+    bad={"Authorization":"Basic "+base64.b64encode(b'root:wrong').decode()}
+    assert client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=bad).status_code==401  # wrong creds
+    assert client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).status_code==200  # correct
+
+def test_regenerate_updates_in_place(client):
+    e=client.post('/api/v1/employees',json=employee_payload('regen@demo.example.com')).json()
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
+    before=client.get('/api/v1/scenarios').json()
+    r=client.post(f"/api/v1/scenarios/{s['id']}/regenerate")
+    assert r.status_code==200 and r.json()['id']==s['id']       # same scenario id, not a new one
+    assert len(client.get('/api/v1/scenarios').json())==len(before)  # no extra scenario created
+    client.post(f"/api/v1/scenarios/{s['id']}/approve")
+    assert client.post(f"/api/v1/scenarios/{s['id']}/regenerate").status_code==409  # not editable once approved
 
 def test_campaign_requires_approval(client):
     e=client.post('/api/v1/employees',json=employee_payload()).json(); s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"awareness","difficulty":"easy"}).json()

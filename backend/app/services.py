@@ -104,7 +104,8 @@ def _localize_context(ctx,lang):
                     "meta":{k:v for k,v in meta.items() if k not in ("title_i18n","summary_i18n")}})
     return out
 
-def generate_scenario(db,employee,objective,difficulty,language):
+def _build_scenario_content(db,employee,objective,difficulty,language):
+    """Run the model + safety + quality pipeline. Returns (data, notes, q_score, q_notes, lang)."""
     rp=recalc_risk(db,employee); ctx=ensure_context(db,employee)
     target_lang=normalize_language(language or employee.preferred_language)
     payload={"employee":{"full_name":employee.full_name,"department":employee.department,"role":employee.role,"preferred_language":language or employee.preferred_language},"risk":{"score":rp.score,"level":rp.level,"factors":rp.factors},"context":_localize_context(ctx,target_lang),"objective":objective,"difficulty":difficulty}
@@ -112,7 +113,27 @@ def generate_scenario(db,employee,objective,difficulty,language):
     data["landing_page_message"]=safe_landing(target_lang)  # safety-critical text is enforced by us, not the LLM
     notes=validate_scenario(data)
     q_score,q_notes=assess_quality(data,payload["context"],target_lang)
-    s=Scenario(employee_id=employee.id,status=ScenarioStatus.REVIEW_REQUIRED.value,language=language or employee.preferred_language,objective=objective,difficulty=difficulty,subject=data["subject"],email_body=data["email_body"],pretext=data["pretext"],landing_page_message=data["landing_page_message"],training_objective=data["training_objective"],risk_indicators=data["risk_indicators"],safety_notes=notes,quality_score=q_score,quality_notes=q_notes); db.add(s); db.flush(); audit(db,"scenario_generated","scenario",s.id,{"provider":"configured","quality":q_score}); return s
+    return data,notes,q_score,q_notes
+
+def _apply_content(s,data,notes,q_score,q_notes):
+    s.subject=data["subject"]; s.email_body=data["email_body"]; s.pretext=data["pretext"]
+    s.landing_page_message=data["landing_page_message"]; s.training_objective=data["training_objective"]
+    s.risk_indicators=data["risk_indicators"]; s.safety_notes=notes; s.quality_score=q_score; s.quality_notes=q_notes
+
+def generate_scenario(db,employee,objective,difficulty,language):
+    data,notes,q_score,q_notes=_build_scenario_content(db,employee,objective,difficulty,language)
+    s=Scenario(employee_id=employee.id,status=ScenarioStatus.REVIEW_REQUIRED.value,language=language or employee.preferred_language,objective=objective,difficulty=difficulty)
+    _apply_content(s,data,notes,q_score,q_notes); db.add(s); db.flush()
+    audit(db,"scenario_generated","scenario",s.id,{"provider":"configured","quality":q_score}); return s
+
+def regenerate_scenario(db,scenario):
+    """Regenerate content for an EXISTING scenario in place (no new row)."""
+    employee=db.get(Employee,scenario.employee_id)
+    if not employee: raise ValueError("Scenario employee no longer exists")
+    data,notes,q_score,q_notes=_build_scenario_content(db,employee,scenario.objective,scenario.difficulty,scenario.language)
+    _apply_content(scenario,data,notes,q_score,q_notes)
+    scenario.status=ScenarioStatus.REVIEW_REQUIRED.value; scenario.approved_at=None
+    db.flush(); audit(db,"scenario_regenerated","scenario",scenario.id,{"quality":q_score}); return scenario
 
 def score_scenario(db,scenario):
     emp=db.get(Employee,scenario.employee_id); lang=normalize_language(scenario.language)

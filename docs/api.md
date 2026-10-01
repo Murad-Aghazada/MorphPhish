@@ -17,9 +17,10 @@ Swagger is available at `/docs`.
 | PATCH | `/api/v1/scenarios/{id}` | Edit an unapproved scenario; re-runs safety validation |
 | POST | `/api/v1/scenarios/{id}/approve` | Approval gate |
 | POST | `/api/v1/scenarios/{id}/reject` | Reject scenario |
-| POST | `/api/v1/scenarios/{id}/launch` | **One-click launch**: create campaign + target + send; returns `simulation_url` |
+| POST | `/api/v1/scenarios/{id}/regenerate` | Regenerate the message **in place** (same scenario id; resets to REVIEW_REQUIRED) |
+| POST | `/api/v1/scenarios/{id}/launch` | **One-click launch** (requires admin HTTP Basic auth): create campaign + target + send; returns `simulation_url` |
 | POST | `/api/v1/campaigns` | Create campaign from approved scenario (name optional; auto-derived) |
-| POST | `/api/v1/campaigns/{id}/launch` | Launch an existing DRAFT campaign; returns `simulation_url` |
+| POST | `/api/v1/campaigns/{id}/launch` | Launch an existing DRAFT campaign (requires admin HTTP Basic auth); returns `simulation_url` |
 | GET | `/api/v1/simulation/{session_id}` | Safe landing context |
 | POST | `/api/v1/simulation/{session_id}/event` | Store safe interaction event; password value discarded |
 | GET | `/api/v1/analytics` | Aggregate database-driven metrics |
