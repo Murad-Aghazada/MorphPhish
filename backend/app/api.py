@@ -24,7 +24,15 @@ def one(db,model,id):
 @router.get('/health')
 def health(): return {"status":"ok","app":settings.app_name,"mode":{"llm":settings.llm_provider,"campaign":settings.campaign_provider,"email":settings.email_provider}}
 @router.get('/employees',response_model=list[EmployeeOut])
-def employees(db:Session=Depends(get_db)): return db.scalars(select(Employee).order_by(Employee.department,Employee.full_name)).all()
+def employees(db:Session=Depends(get_db)):
+    rows=db.scalars(select(Employee).order_by(Employee.department,Employee.full_name)).all()
+    risk={rp.employee_id:rp for rp in db.scalars(select(RiskProfile)).all()}
+    items=[]
+    for x in rows:
+        item=EmployeeOut.model_validate(x); rp=risk.get(x.id)
+        if rp: item.risk_score=rp.score; item.risk_level=rp.level
+        items.append(item)
+    return items
 @router.get('/hr/source',response_model=list[HRRecordOut])
 def hr_source():
     try: return get_hr_adapter().list_employees()

@@ -16,6 +16,11 @@ def test_end_to_end_and_password_never_persisted(client):
     audit=client.get('/api/v1/audit').text; assert secret not in audit
     a=client.get(f"/api/v1/campaigns/{c['id']}/analytics").json(); assert a['submission_rate']==100.0
 
+def test_employee_list_includes_risk(client):
+    client.post('/api/v1/employees',json=employee_payload('risklist@demo.example.com'))
+    row=next(x for x in client.get('/api/v1/employees').json() if x['email']=='risklist@demo.example.com')
+    assert row['risk_score'] is not None and row['risk_level'] in ('low','medium','high','critical')
+
 def test_employee_crud_and_invalid(client):
     e=client.post('/api/v1/employees',json=employee_payload('x@demo.example.com')); assert e.status_code==201
     assert client.post('/api/v1/employees',json=employee_payload('x@demo.example.com')).status_code==409

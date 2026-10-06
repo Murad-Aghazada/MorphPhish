@@ -283,10 +283,15 @@ function Dashboard() {
 }
 
 /* ------------------------------------------------------------------ employees */
+const EMP_SORTS = [['risk-desc', 'Risk high→low'], ['risk-asc', 'Risk low→high'], ['name-asc', 'Name A→Z'], ['dept-asc', 'Department']];
 function Employees() {
   const [d, e, setD] = useLoad('/employees');
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [q, setQ] = useState('');
+  const [dept, setDept] = useState('all');
+  const [level, setLevel] = useState('all');
+  const [sort, setSort] = useState('risk-desc');
   const sync = async () => {
     setBusy(true);
     try {
@@ -297,6 +302,19 @@ function Employees() {
     setBusy(false);
   };
   if (e) return <Err e={e} />;
+  const depts = d ? Array.from(new Set(d.map((x) => x.department).filter(Boolean))).sort() : [];
+  const filtered = d ? d
+    .filter((x) =>
+      (dept === 'all' || x.department === dept) &&
+      (level === 'all' || x.risk_level === level) &&
+      (!q || x.full_name.toLowerCase().includes(q.toLowerCase()) || x.role.toLowerCase().includes(q.toLowerCase())))
+    .sort((a, b) => {
+      const sa = a.risk_score ?? -1, sb = b.risk_score ?? -1;
+      if (sort === 'risk-desc') return sb - sa;
+      if (sort === 'risk-asc') return sa - sb;
+      if (sort === 'name-asc') return a.full_name.localeCompare(b.full_name);
+      return a.department.localeCompare(b.department) || a.full_name.localeCompare(b.full_name);
+    }) : [];
   return (
     <>
       <div className="row" style={{ alignItems: 'flex-end' }}>
@@ -304,23 +322,45 @@ function Employees() {
         <button className="secondary" onClick={sync} disabled={busy}>{busy ? 'Syncing…' : 'Sync from HR'}</button>
       </div>
       {!d ? <Load /> : (
-        <div className="card" style={{ padding: 8 }}>
-          <table>
-            <thead><tr><th>Name</th><th>Department</th><th>Role</th><th>Lang</th><th>Source</th><th /></tr></thead>
-            <tbody>
-              {d.map((x) => (
-                <tr key={x.id}>
-                  <td style={{ fontWeight: 600 }}>{x.full_name}</td>
-                  <td>{x.department}</td>
-                  <td className="muted">{x.role}</td>
-                  <td className="mono">{x.preferred_language}</td>
-                  <td><span className="badge" title={x.external_id || ''}>{x.source}</span></td>
-                  <td style={{ textAlign: 'right' }}><NavLink to={`/employees/${x.id}`}>View →</NavLink></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="card form" style={{ flexWrap: 'wrap' }}>
+            <input style={{ minWidth: 200, flex: 1 }} value={q} onChange={(x) => setQ(x.target.value)} placeholder="Search name or role…" />
+            <select value={dept} onChange={(x) => setDept(x.target.value)} title="Department">
+              <option value="all">All departments</option>
+              {depts.map((x) => <option key={x} value={x}>{x}</option>)}
+            </select>
+            <select value={level} onChange={(x) => setLevel(x.target.value)} title="Risk level">
+              <option value="all">All risk levels</option>
+              <option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+            </select>
+            <select value={sort} onChange={(x) => setSort(x.target.value)} title="Sort by">
+              {EMP_SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <p className="muted" style={{ fontSize: 13, margin: '2px 2px 8px' }}>{filtered.length} of {d.length} personas</p>
+          <div className="card" style={{ padding: 8 }}>
+            {filtered.length === 0 ? <Empty>No personas match these filters.</Empty> : (
+              <table>
+                <thead><tr><th>Name</th><th>Department</th><th>Role</th><th>Lang</th><th>Risk</th><th>Source</th><th /></tr></thead>
+                <tbody>
+                  {filtered.map((x) => (
+                    <tr key={x.id}>
+                      <td style={{ fontWeight: 600 }}>{x.full_name}</td>
+                      <td>{x.department}</td>
+                      <td className="muted">{x.role}</td>
+                      <td className="mono">{x.preferred_language}</td>
+                      <td>{x.risk_score != null
+                        ? <span className="riskpill" style={{ color: riskColor(x.risk_score), borderColor: 'color-mix(in srgb, ' + riskColor(x.risk_score) + ' 40%, transparent)' }} title={x.risk_level}>{Math.round(x.risk_score)}</span>
+                        : <span className="muted">—</span>}</td>
+                      <td><span className="badge" title={x.external_id || ''}>{x.source}</span></td>
+                      <td style={{ textAlign: 'right' }}><NavLink to={`/employees/${x.id}`}>View →</NavLink></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
       )}
     </>
   );

@@ -6,7 +6,7 @@ class EmployeeCreate(BaseModel):
 class EmployeeUpdate(BaseModel):
     full_name:str|None=None; department:str|None=None; role:str|None=None; preferred_language:str|None=None; privilege_level:int|None=Field(None,ge=1,le=5); access_sensitivity:int|None=Field(None,ge=1,le=5); social_exposure:int|None=Field(None,ge=1,le=5); active:bool|None=None
 class EmployeeOut(ORM):
-    id:str; full_name:str; email:str; department:str; role:str; preferred_language:str; privilege_level:int; access_sensitivity:int; social_exposure:int; source:str; external_id:str|None; active:bool; created_at:datetime
+    id:str; full_name:str; email:str; department:str; role:str; preferred_language:str; privilege_level:int; access_sensitivity:int; social_exposure:int; source:str; external_id:str|None; active:bool; created_at:datetime; risk_score:float|None=None; risk_level:str|None=None
 class HRRecordOut(BaseModel):
     external_id:str|None=None; full_name:str; email:str; department:str; role:str; preferred_language:str; privilege_level:int; access_sensitivity:int; social_exposure:int
 class HRSyncResult(BaseModel): provider:str; created:int; updated:int; total:int
