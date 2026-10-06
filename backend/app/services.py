@@ -8,7 +8,7 @@ from .adapters.context import MockContextAdapter
 from .adapters.hr import get_hr_adapter, FIELDS as HR_FIELDS
 from .llm.providers import get_llm_provider
 from .llm.prompts import normalize_language, safe_landing, DEPARTMENT_THEMES, DEFAULT_THEME
-from .integrations.campaign import get_campaign_provider
+from .integrations.campaign import get_campaign_provider, MockCampaignProvider
 from .integrations.email import get_email_provider, build_email_html
 from .core.config import settings
 
@@ -151,8 +151,13 @@ def launch_campaign(db,campaign,scenario,employee):
     text=f"{scenario.email_body}\n\n{cta}: {url}"
     pixel=settings.backend_url.rstrip('/')+f"/api/v1/simulation/{target.session_id}/pixel.gif"
     html_body=build_email_html(team,scenario.subject,scenario.email_body,url,cta,pixel_url=pixel)
-    result=get_campaign_provider().create_campaign(campaign,scenario,target)
-    get_email_provider().send(employee.email,scenario.subject,text,html_body=html_body,from_name=team)
+    provider=get_campaign_provider()
+    # GoPhish sends the mail itself; the mock engine delegates delivery to our email provider.
+    if isinstance(provider,MockCampaignProvider):
+        result=provider.create_campaign(campaign,scenario,target)
+        get_email_provider().send(employee.email,scenario.subject,text,html_body=html_body,from_name=team)
+    else:
+        result=provider.create_campaign(campaign,scenario,target,employee=employee)
     campaign.status=CampaignStatus.ACTIVE.value; campaign.started_at=datetime.now(timezone.utc); campaign.provider_campaign_id=str(result.get("id","")); target.delivered_at=datetime.now(timezone.utc); scenario.status=ScenarioStatus.ACTIVE.value; audit(db,"campaign_started","campaign",campaign.id,{"provider":campaign.provider}); return target
 
 # ---------------------------------------------------------------- analytics (Week 4)

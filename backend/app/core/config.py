@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     hr_api_url: str = ""
     hr_api_key: str = ""
     campaign_provider: str = "mock"
-    gophish_url: str = ""
+    gophish_url: str = ""                       # admin API, e.g. http://gophish:3333
+    gophish_phish_url: str = "http://localhost:8080"  # public phishing-server URL targets reach
     gophish_api_key: str = ""
     gophish_verify_tls: bool = True
     email_provider: str = "mock"

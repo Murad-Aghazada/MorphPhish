@@ -17,6 +17,24 @@ services:
     image: axllent/mailpit:latest
     ports: ["8025:8025", "1025:1025"]
 
+  # Real campaign engine (optional). Set CAMPAIGN_PROVIDER=gophish to use it.
+  # Admin API/UI on 3333; phishing server on 8080. First boot prints an admin
+  # password in the logs — log in, then copy the API key from Account Settings.
+  # Configured via the image's env vars (SQLite, no TLS) for the local lab.
+  gophish:
+    image: gophish/gophish:latest
+    user: root                       # so GoPhish can write the SQLite DB on the named volume
+    ports: ["3333:3333", "8080:80"]
+    environment:
+      ADMIN_LISTEN_URL: "0.0.0.0:3333"
+      ADMIN_USE_TLS: "false"
+      PHISH_LISTEN_URL: "0.0.0.0:80"
+      PHISH_USE_TLS: "false"
+      DB_FILE_PATH: "/data/gophish.db"   # persist login + API key across restarts
+      CONTACT_ADDRESS: "security-team@demo.example.com"
+    volumes:
+      - gophish_data:/data
+
   backend:
     build: ./backend
     env_file: .env
@@ -42,3 +60,4 @@ services:
 
 volumes:
   postgres_data:
+  gophish_data:
