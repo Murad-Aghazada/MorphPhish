@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useContext, createContext } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, NavLink, useParams } from 'react-router-dom';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, LabelList } from 'recharts';
 import { api } from './api';
 import './styles.css';
 
@@ -142,24 +142,99 @@ const Head = ({ eyebrow, title, sub }) => (
   </div>
 );
 
-/* ------------------------------------------------------------------ dashboard */
-function DeptChart({ data }) {
-  const { theme } = useContext(ThemeCtx); // re-read colors on theme change
-  const grid = cssVar('--border'); const muted = cssVar('--muted');
+/* ------------------------------------------------------------------ charts (Week 4)
+   Every chart re-reads theme tokens on toggle (keyed by theme), ships a hover
+   tooltip, and encodes identity with a legend + direct labels — never color
+   alone. Palette: CVD-validated series tokens + the shared risk ramp. */
+function useChartTokens() {
+  const { theme } = useContext(ThemeCtx);           // re-read on theme change
+  return { theme, grid: cssVar('--border'), muted: cssVar('--muted'), surface: cssVar('--surface'), ink: cssVar('--ink') };
+}
+const chartTip = (t) => ({ cursor: { fill: 'color-mix(in srgb, var(--iris) 8%, transparent)' },
+  contentStyle: { background: t.surface, border: '1px solid ' + t.grid, borderRadius: 12, color: t.ink, fontSize: 13 },
+  labelStyle: { color: t.muted } });
+
+// Average risk (0–100) across a dimension — colored by the risk ramp.
+function RiskByDimension({ data, height = 300 }) {
+  const t = useChartTokens();
   return (
-    <ResponsiveContainer width="100%" height={320}>
-      <BarChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} key={theme}>
-        <XAxis dataKey="department" interval={0} tick={{ fill: muted, fontSize: 11 }} tickLine={false} axisLine={{ stroke: grid }} />
-        <YAxis domain={[0, 100]} tick={{ fill: muted, fontSize: 12 }} tickLine={false} axisLine={false} />
-        <Tooltip cursor={{ fill: 'color-mix(in srgb, var(--iris) 8%, transparent)' }}
-          contentStyle={{ background: cssVar('--surface'), border: '1px solid ' + grid, borderRadius: 12, color: cssVar('--ink'), fontSize: 13 }} />
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} margin={{ top: 16, right: 8, left: -12, bottom: 0 }} key={t.theme}>
+        <XAxis dataKey="key" interval={0} tick={{ fill: t.muted, fontSize: 11 }} tickLine={false} axisLine={{ stroke: t.grid }} angle={data.length > 6 ? -18 : 0} textAnchor={data.length > 6 ? 'end' : 'middle'} height={data.length > 6 ? 56 : 30} />
+        <YAxis domain={[0, 100]} tick={{ fill: t.muted, fontSize: 12 }} tickLine={false} axisLine={false} />
+        <Tooltip {...chartTip(t)} formatter={(v) => [v, 'avg risk']} />
         <Bar dataKey="average_risk" radius={[6, 6, 0, 0]} maxBarSize={54}>
           {data.map((d, i) => <Cell key={i} fill={riskColor(d.average_risk)} />)}
+          <LabelList dataKey="average_risk" position="top" fill={t.muted} fontSize={11} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
 }
+
+// Engagement funnel: delivered → opened → clicked → submitted → reported.
+// One measure across ordered stages → horizontal bars, single sequential hue.
+const STAGE_LABEL = { delivered: 'Delivered', opened: 'Opened', clicked: 'Clicked', submitted: 'Submitted', reported: 'Reported' };
+function FunnelChart({ data, height = 260 }) {
+  const t = useChartTokens();
+  const rows = data.map((d) => ({ ...d, name: STAGE_LABEL[d.stage] || d.stage }));
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart layout="vertical" data={rows} margin={{ top: 4, right: 44, left: 8, bottom: 0 }} key={t.theme}>
+        <XAxis type="number" domain={[0, 100]} hide />
+        <YAxis type="category" dataKey="name" width={78} tick={{ fill: t.muted, fontSize: 12 }} tickLine={false} axisLine={false} />
+        <Tooltip {...chartTip(t)} formatter={(v, n, p) => [`${p.payload.count} (${v}%)`, 'reached']} />
+        <Bar dataKey="rate" fill="var(--series-1)" radius={[0, 5, 5, 0]} maxBarSize={30} background={{ fill: 'var(--surface-2)', radius: 5 }}>
+          <LabelList dataKey="count" position="right" fill={t.ink} fontSize={12} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Risk-level distribution across the workforce — ordered severity, status colors.
+const LEVEL_COLOR = { critical: 'var(--risk-critical)', high: 'var(--risk-high)', medium: 'var(--risk-medium)', low: 'var(--risk-low)' };
+function RiskDistribution({ data, height = 260 }) {
+  const t = useChartTokens();
+  const rows = data.map((d) => ({ ...d, name: d.level[0].toUpperCase() + d.level.slice(1) }));
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart layout="vertical" data={rows} margin={{ top: 4, right: 36, left: 8, bottom: 0 }} key={t.theme}>
+        <XAxis type="number" allowDecimals={false} hide />
+        <YAxis type="category" dataKey="name" width={70} tick={{ fill: t.muted, fontSize: 12 }} tickLine={false} axisLine={false} />
+        <Tooltip {...chartTip(t)} formatter={(v) => [v, 'employees']} />
+        <Bar dataKey="count" radius={[0, 5, 5, 0]} maxBarSize={30}>
+          {rows.map((d, i) => <Cell key={i} fill={LEVEL_COLOR[d.level]} />)}
+          <LabelList dataKey="count" position="right" fill={t.ink} fontSize={12} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Engagement rates (click / submission / reporting) across a dimension.
+// Three categorical series → grouped bars, legend + tooltip (identity never color-alone).
+const ENGAGE = [['click_rate', 'Clicked', 'var(--series-1)'], ['submission_rate', 'Submitted', 'var(--series-2)'], ['reporting_rate', 'Reported', 'var(--series-3)']];
+function EngagementByDimension({ data, height = 320 }) {
+  const t = useChartTokens();
+  const rows = data.filter((d) => d.delivered > 0);
+  if (!rows.length) return <Empty>No delivered simulations in this cut yet.</Empty>;
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={rows} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} key={t.theme} barGap={2} barCategoryGap="22%">
+        <XAxis dataKey="key" interval={0} tick={{ fill: t.muted, fontSize: 11 }} tickLine={false} axisLine={{ stroke: t.grid }} angle={rows.length > 5 ? -18 : 0} textAnchor={rows.length > 5 ? 'end' : 'middle'} height={rows.length > 5 ? 56 : 30} />
+        <YAxis domain={[0, 100]} unit="%" tick={{ fill: t.muted, fontSize: 12 }} tickLine={false} axisLine={false} />
+        <Tooltip {...chartTip(t)} formatter={(v, n) => [`${v}%`, n]} />
+        <Legend wrapperStyle={{ fontSize: 12, color: t.muted }} iconType="circle" iconSize={9} />
+        {ENGAGE.map(([k, name, color]) => (
+          <Bar key={k} dataKey={k} name={name} fill={color} radius={[4, 4, 0, 0]} maxBarSize={26} />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/* ------------------------------------------------------------------ dashboard */
 function Dashboard() {
   const [a, e] = useLoad('/analytics');
   if (e) return <Err e={e} />;
@@ -177,9 +252,19 @@ function Dashboard() {
         <Metric label="Submission" value={a.submission_rate} unit="%" fill={a.submission_rate} />
         <Metric label="Reported" value={a.reporting_rate} unit="%" fill={a.reporting_rate} />
       </section>
+      <section className="grid2" style={{ marginTop: 16 }}>
+        <div className="card">
+          <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Engagement funnel</h3><Badge kind="iris">% of delivered</Badge></div>
+          {a.funnel && a.delivered > 0 ? <FunnelChart data={a.funnel} /> : <Empty>Launch a simulation to populate the funnel.</Empty>}
+        </div>
+        <div className="card">
+          <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Workforce risk distribution</h3><Badge kind="iris">employees</Badge></div>
+          {a.risk_distribution && a.risk_distribution.some((r) => r.count) ? <RiskDistribution data={a.risk_distribution} /> : <Empty>No risk profiles yet.</Empty>}
+        </div>
+      </section>
       <div className="card" style={{ marginTop: 16 }}>
         <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Average risk by department</h3><Badge kind="iris">0–100 scale</Badge></div>
-        {a.by_department && a.by_department.length ? <DeptChart data={a.by_department} /> : <Empty>No department data yet.</Empty>}
+        {a.by_department && a.by_department.length ? <RiskByDimension data={a.by_department} /> : <Empty>No department data yet.</Empty>}
       </div>
     </>
   );
@@ -418,13 +503,37 @@ function Simulations() {
 }
 
 /* ------------------------------------------------------------------ analytics */
+// Accessible table view of a dimension's metrics (also the relief/colorblind
+// fallback for the grouped bar chart — identity is never color-alone).
+function DimensionTable({ data, label }) {
+  return (
+    <table>
+      <thead><tr><th>{label}</th><th>Staff</th><th>Avg risk</th><th>Sent</th><th>Click</th><th>Submit</th><th>Report</th><th>Resp (s)</th></tr></thead>
+      <tbody>
+        {data.map((r) => (
+          <tr key={r.key}>
+            <td style={{ fontWeight: 600 }}>{r.key}</td>
+            <td className="mono">{r.employees}</td>
+            <td><span className="riskpill" style={{ color: riskColor(r.average_risk), borderColor: 'color-mix(in srgb, ' + riskColor(r.average_risk) + ' 40%, transparent)' }}>{r.average_risk}</span></td>
+            <td className="mono">{r.delivered}</td>
+            <td className="mono">{r.click_rate}%</td>
+            <td className="mono">{r.submission_rate}%</td>
+            <td className="mono">{r.reporting_rate}%</td>
+            <td className="mono">{r.average_response_time_seconds || '—'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 function Analytics() {
   const [d, e] = useLoad('/analytics');
   if (e) return <Err e={e} />;
   if (!d) return <Load />;
+  const hasData = d.delivered > 0;
   return (
     <>
-      <Head eyebrow="Campaign outcomes" title="Analytics" sub="Aggregated across every launched simulation." />
+      <Head eyebrow="Campaign outcomes" title="Analytics" sub="Role- and department-level human-risk map across every launched simulation." />
       <section className="grid4">
         <Metric label="Targets" value={d.targets} />
         <Metric label="Delivery" value={d.delivery_rate} unit="%" fill={d.delivery_rate} />
@@ -437,29 +546,34 @@ function Analytics() {
         <Metric label="Reported" value={d.reporting_rate} unit="%" fill={d.reporting_rate} />
         <Metric label="Campaigns" value={d.campaigns} />
       </section>
+      <section className="grid2" style={{ marginTop: 16 }}>
+        <div className="card">
+          <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Engagement funnel</h3><Badge kind="iris">% of delivered</Badge></div>
+          {hasData ? <FunnelChart data={d.funnel} /> : <Empty>Launch a simulation to populate the funnel.</Empty>}
+        </div>
+        <div className="card">
+          <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Workforce risk distribution</h3><Badge kind="iris">employees</Badge></div>
+          {d.risk_distribution && d.risk_distribution.some((r) => r.count) ? <RiskDistribution data={d.risk_distribution} /> : <Empty>No risk profiles yet.</Empty>}
+        </div>
+      </section>
+      <section className="grid2" style={{ marginTop: 16 }}>
+        <div className="card">
+          <h3>Average risk by department</h3>
+          {d.by_department && d.by_department.length ? <RiskByDimension data={d.by_department} /> : <Empty>No department data yet.</Empty>}
+        </div>
+        <div className="card">
+          <h3>Average risk by role</h3>
+          {d.by_role && d.by_role.length ? <RiskByDimension data={d.by_role} /> : <Empty>No role data yet.</Empty>}
+        </div>
+      </section>
       <div className="card" style={{ marginTop: 16 }}>
-        <h3>Average risk by department</h3>
-        {d.by_department && d.by_department.length ? (
-          <table>
-            <thead><tr><th>Department</th><th>Employees</th><th style={{ width: '45%' }}>Average risk</th></tr></thead>
-            <tbody>
-              {d.by_department.map((row) => (
-                <tr key={row.department}>
-                  <td style={{ fontWeight: 600 }}>{row.department}</td>
-                  <td className="mono">{row.employees}</td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <span className="ftrack" style={{ flex: 1, height: 8, borderRadius: 5, background: 'var(--surface-2)', overflow: 'hidden' }}>
-                        <i style={{ display: 'block', height: '100%', width: row.average_risk + '%', background: riskColor(row.average_risk) }} />
-                      </span>
-                      <span className="mono" style={{ width: 42, textAlign: 'right' }}>{row.average_risk}</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : <Empty>No department data yet.</Empty>}
+        <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Engagement by department</h3><Badge kind="iris">% of delivered</Badge></div>
+        {d.by_department && d.by_department.length ? <EngagementByDimension data={d.by_department} /> : <Empty>No department data yet.</Empty>}
+        {d.by_department && d.by_department.length > 0 && <div style={{ marginTop: 14 }}><DimensionTable data={d.by_department} label="Department" /></div>}
+      </div>
+      <div className="card" style={{ marginTop: 16 }}>
+        <h3>Engagement by role</h3>
+        {d.by_role && d.by_role.length ? <DimensionTable data={d.by_role} label="Role" /> : <Empty>No role data yet.</Empty>}
       </div>
     </>
   );

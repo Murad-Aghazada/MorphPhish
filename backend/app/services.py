@@ -148,15 +148,69 @@ def launch_campaign(db,campaign,scenario,employee):
     result=get_campaign_provider().create_campaign(campaign,scenario,target); get_email_provider().send(employee.email,scenario.subject,scenario.email_body+f"\n\nSimulation link: {simulation_url(target.session_id)}")
     campaign.status=CampaignStatus.ACTIVE.value; campaign.started_at=datetime.now(timezone.utc); campaign.provider_campaign_id=str(result.get("id","")); target.delivered_at=datetime.now(timezone.utc); scenario.status=ScenarioStatus.ACTIVE.value; audit(db,"campaign_started","campaign",campaign.id,{"provider":campaign.provider}); return target
 
+# ---------------------------------------------------------------- analytics (Week 4)
+# The engagement funnel stage -> the interaction event that marks it reached.
+FUNNEL_STAGES=[("delivered",None),("opened","email_opened"),("clicked","link_clicked"),
+               ("submitted","credential_simulation_submitted"),("reported","simulation_reported")]
+RISK_LEVELS=["critical","high","medium","low"]
+
+def _event_counts(events):
+    c={}
+    for e in events: c[e.event_type]=c.get(e.event_type,0)+1
+    return c
+
+def _rates_block(targets,events):
+    """Delivery/open/click/submission/reporting rates (% of delivered) plus the
+    average reaction time (seconds from delivery to click/report) for one slice
+    of targets and their events. Shared by the global view and every dimension."""
+    delivered=sum(1 for t in targets if t.delivered_at)
+    c=_event_counts(events); pct=lambda n,d: round(100*n/d,1) if d else 0.0
+    by_session={t.session_id:t for t in targets}; rts=[]
+    for e in events:
+        t=by_session.get(e.session_id)
+        if t and t.delivered_at and e.event_type in {"link_clicked","simulation_reported"}:
+            rts.append((e.occurred_at-t.delivered_at).total_seconds())
+    return {"targets":len(targets),"delivered":delivered,
+            "delivery_rate":pct(delivered,len(targets)),
+            "open_rate":pct(c.get("email_opened",0),delivered),
+            "click_rate":pct(c.get("link_clicked",0),delivered),
+            "submission_rate":pct(c.get("credential_simulation_submitted",0),delivered),
+            "reporting_rate":pct(c.get("simulation_reported",0),delivered),
+            "average_response_time_seconds":round(sum(rts)/len(rts),1) if rts else 0.0}
+
+def _funnel(targets,events):
+    delivered=sum(1 for t in targets if t.delivered_at); c=_event_counts(events)
+    pct=lambda n: round(100*n/delivered,1) if delivered else 0.0
+    rows=[]
+    for stage,etype in FUNNEL_STAGES:
+        n=delivered if etype is None else c.get(etype,0)
+        rows.append({"stage":stage,"count":n,"rate":pct(n)})
+    return rows
+
 def analytics(db,campaign_id=None):
     cq=select(Campaign); eq=select(InteractionEvent); tq=select(CampaignTarget)
     if campaign_id: cq=cq.where(Campaign.id==campaign_id); eq=eq.where(InteractionEvent.campaign_id==campaign_id); tq=tq.where(CampaignTarget.campaign_id==campaign_id)
-    campaigns=db.scalars(cq).all(); events=db.scalars(eq).all(); targets=db.scalars(tq).all(); delivered=sum(1 for t in targets if t.delivered_at)
-    types=[e.event_type for e in events]; count=lambda x:types.count(x); safe=lambda n,d: round(100*n/d,1) if d else 0.0
-    response_times=[]
-    by_session={t.session_id:t for t in targets}
-    for e in events:
-        t=by_session.get(e.session_id)
-        if t and t.delivered_at and e.event_type in {"link_clicked","simulation_reported"}: response_times.append((e.occurred_at-t.delivered_at).total_seconds())
-    avg=round(sum(response_times)/len(response_times),1) if response_times else 0.0
-    return {"campaigns":len(campaigns),"targets":len(targets),"delivery_rate":safe(delivered,len(targets)),"open_rate":safe(count("email_opened"),delivered),"click_rate":safe(count("link_clicked"),delivered),"submission_rate":safe(count("credential_simulation_submitted"),delivered),"reporting_rate":safe(count("simulation_reported"),delivered),"average_response_time_seconds":avg}
+    campaigns=db.scalars(cq).all(); events=db.scalars(eq).all(); targets=db.scalars(tq).all()
+    return {"campaigns":len(campaigns),**_rates_block(targets,events),"funnel":_funnel(targets,events)}
+
+def risk_map(db):
+    """Human-risk map: every engagement metric aggregated by department and by
+    role, plus the organization's risk-level distribution. This is the Week 4
+    diagnostic surface — it turns raw events into a role/department risk picture."""
+    emps=db.scalars(select(Employee)).all()
+    targets=db.scalars(select(CampaignTarget)).all()
+    events=db.scalars(select(InteractionEvent)).all()
+    risk={rp.employee_id:(rp.score,rp.level) for rp in db.scalars(select(RiskProfile)).all()}
+    def block_for(group):
+        ids={e.id for e in group}
+        ts=[t for t in targets if t.employee_id in ids]; es=[ev for ev in events if ev.employee_id in ids]
+        scores=[risk[e.id][0] for e in group if e.id in risk]
+        return {"employees":len(group),"average_risk":round(sum(scores)/len(scores),1) if scores else 0.0,**_rates_block(ts,es)}
+    def group_by(attr):
+        buckets={}
+        for e in emps: buckets.setdefault(getattr(e,attr),[]).append(e)
+        return sorted([{"key":k,**block_for(v)} for k,v in buckets.items()],key=lambda r:r["average_risk"],reverse=True)
+    dist={l:0 for l in RISK_LEVELS}
+    for _id,(_sc,lv) in risk.items(): dist[lv]=dist.get(lv,0)+1
+    return {"by_department":group_by("department"),"by_role":group_by("role"),
+            "risk_distribution":[{"level":l,"count":dist.get(l,0)} for l in RISK_LEVELS]}

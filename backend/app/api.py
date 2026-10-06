@@ -148,11 +148,7 @@ def event(session_id:str,body:EventIn,db:Session=Depends(get_db)):
     ev=InteractionEvent(campaign_id=t.campaign_id,employee_id=t.employee_id,session_id=session_id,event_type=body.event_type,safe_metadata=meta); db.add(ev); db.flush(); audit(db,"simulation_event","campaign",t.campaign_id,{"event_type":body.event_type}); db.commit(); return ev
 @router.get('/analytics')
 def analytics_all(db:Session=Depends(get_db)):
-    base=analytics(db); employees=db.scalars(select(Employee)).all(); dept={}
-    for e in employees:
-      rp=db.scalar(select(RiskProfile).where(RiskProfile.employee_id==e.id)); d=dept.setdefault(e.department,{"count":0,"risk_total":0.0}); d["count"]+=1; d["risk_total"]+=rp.score if rp else 0
-    by_department=[{"department":k,"employees":v["count"],"average_risk":round(v["risk_total"]/v["count"],1)} for k,v in dept.items()]
-    return {**base,"by_department":sorted(by_department,key=lambda x:x['average_risk'],reverse=True)}
+    return {**analytics(db),**risk_map(db)}
 @router.get('/campaigns/{id}/analytics')
 def campaign_analytics(id:str,db:Session=Depends(get_db)): one(db,Campaign,id); return analytics(db,id)
 @router.get('/recommendations',response_model=list[RecommendationOut])

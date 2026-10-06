@@ -224,3 +224,29 @@ def test_llm_response_is_coerced_to_valid_scenario():
     # tolerant extraction salvages JSON from fenced / prose-wrapped text and never raises
     assert providers._extract_json("```json\n{\"subject\":\"x\"}\n```")=={"subject":"x"}
     assert providers._extract_json("garbage, no json here")=={}
+
+def test_analytics_risk_map(client):
+    # Week 4: /analytics is a role + department human-risk map with an engagement
+    # funnel and a workforce risk-level distribution.
+    e=client.post('/api/v1/employees',json=employee_payload('map@demo.example.com')).json()
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
+    client.post(f"/api/v1/scenarios/{s['id']}/approve")
+    sess=client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).json()['session_id']
+    for et in ["email_opened","link_clicked","simulation_reported"]:
+        client.post(f'/api/v1/simulation/{sess}/event',json={"session_id":sess,"event_type":et})
+    a=client.get('/api/v1/analytics').json()
+    # funnel is ordered and expressed as % of delivered
+    assert [r['stage'] for r in a['funnel']]==["delivered","opened","clicked","submitted","reported"]
+    assert a['funnel'][0]['rate']==100.0 and a['funnel'][0]['count']==a['delivered']
+    # both dimensions carry the full engagement metric set, keyed by 'key', risk-sorted
+    assert a['by_department'] and a['by_role']
+    row=next(r for r in a['by_department'] if r['key']==e['department'])
+    for k in ('employees','average_risk','delivered','click_rate','submission_rate','reporting_rate','average_response_time_seconds'):
+        assert k in row
+    assert row['click_rate']==100.0 and row['reporting_rate']==100.0
+    risks=[r['average_risk'] for r in a['by_department']]; assert risks==sorted(risks,reverse=True)
+    # risk distribution always covers the four ordered levels
+    assert [r['level'] for r in a['risk_distribution']]==["critical","high","medium","low"]
+    # per-campaign analytics still exposes the flat rate keys
+    cid=client.get('/api/v1/campaigns').json()[0]['id']
+    assert client.get(f'/api/v1/campaigns/{cid}/analytics').json()['click_rate']==100.0

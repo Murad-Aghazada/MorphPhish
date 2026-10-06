@@ -23,9 +23,33 @@ Swagger is available at `/docs`.
 | POST | `/api/v1/campaigns/{id}/launch` | Launch an existing DRAFT campaign (requires admin HTTP Basic auth); returns `simulation_url` |
 | GET | `/api/v1/simulation/{session_id}` | Safe landing context |
 | POST | `/api/v1/simulation/{session_id}/event` | Store safe interaction event; password value discarded |
-| GET | `/api/v1/analytics` | Aggregate database-driven metrics |
-| GET | `/api/v1/campaigns/{id}/analytics` | Campaign metrics |
+| GET | `/api/v1/analytics` | Human-risk map: funnel + per-department & per-role engagement + risk distribution |
+| GET | `/api/v1/campaigns/{id}/analytics` | Flat per-campaign metrics (delivery/open/click/submission/reporting + avg response) |
 | GET | `/api/v1/recommendations` | Deterministic awareness recommendations |
 | GET | `/api/v1/audit` | Recent administrative audit events |
 
 Important errors: 404 unknown IDs/sessions, 409 invalid lifecycle transition or duplicates, 422 invalid/safety-rejected input, 503 unavailable external provider.
+
+## `/analytics` response shape (Week 4)
+
+```jsonc
+{
+  "campaigns": 5, "targets": 5, "delivered": 5,
+  "delivery_rate": 100.0, "open_rate": 40.0, "click_rate": 60.0,
+  "submission_rate": 20.0, "reporting_rate": 20.0,
+  "average_response_time_seconds": 42.0,
+  "funnel": [ { "stage": "delivered", "count": 5, "rate": 100.0 }, … ],   // delivered→opened→clicked→submitted→reported, rate = % of delivered
+  "by_department": [ { "key": "Finance", "employees": 3, "average_risk": 81.8,
+                       "delivered": 2, "click_rate": 50.0, "submission_rate": 50.0,
+                       "reporting_rate": 0.0, "average_response_time_seconds": 30.1 }, … ],  // sorted by average_risk desc
+  "by_role": [ { "key": "DevOps Engineer", … same metric set … }, … ],
+  "risk_distribution": [ { "level": "critical", "count": 4 }, { "level": "high", … }, … ]  // always the 4 ordered levels
+}
+```
+
+## Email delivery (Week 4)
+
+`launch` sends the simulation email through the configured email provider. Set `EMAIL_PROVIDER=smtp`
+to deliver to the bundled **Mailpit** test inbox (the local stand-in for Mailtrap) at
+`http://localhost:8025`; recipients are constrained to `AUTHORIZED_EMAIL_DOMAINS`. `EMAIL_PROVIDER=mock`
+(the test default) records nothing externally.
