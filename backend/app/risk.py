@@ -37,7 +37,12 @@ _LANG_DEFAULT = 0.60
 # Base-dimension weights (sum = 100).
 WEIGHTS = {"role_privilege": 30, "department_exposure": 22, "data_sensitivity": 20,
            "social_exposure": 18, "language_exposure": 10}
-BEHAVIOR_CAP = 12  # additive modifier ceiling
+# Outcome-based behavioural modifier. Each simulation a persona faced is scored by
+# its TERMINAL outcome, so catching-and-reporting LOWERS risk while falling for it
+# raises it; completing assigned training also reduces risk (remediation). The net
+# modifier is bounded so behaviour nudges, but never dominates, the static exposure.
+BEHAVIOR_POINTS = {"submitted": 8, "clicked_only": 4, "reported": -6, "training_completed": -3}
+BEHAVIOR_FLOOR, BEHAVIOR_CAP = -15, 15
 
 
 def role_weight(role):
@@ -56,7 +61,10 @@ def _clamp01(x):
     return 0.0 if x < 0 else 1.0 if x > 1 else x
 
 
-def calculate(employee, prior_events=0):
+def calculate(employee, behavior=None):
+    """behavior: dict of outcome counts — {submitted, clicked_only, reported,
+    training_completed}. Any omitted key is treated as 0."""
+    b = behavior or {}
     priv = employee.privilege_level or 1
     # Each dimension: (key, label, category, weight, normalized 0-1 value, detail)
     dims = [
@@ -80,12 +88,14 @@ def calculate(employee, prior_events=0):
                for (k, l, c, w, v, d) in dims]
     base = sum(f["points"] for f in factors)
 
-    behavior = min((prior_events or 0) * 4, BEHAVIOR_CAP)
-    if behavior:
-        factors.append({"key": "prior_behavior", "label": "Prior risky behaviour", "category": "behavior",
-                        "weight": BEHAVIOR_CAP, "points": float(behavior),
-                        "detail": f"{prior_events} prior risky interaction(s)"})
+    raw = sum(BEHAVIOR_POINTS[k] * int(b.get(k, 0) or 0) for k in BEHAVIOR_POINTS)
+    modifier = max(BEHAVIOR_FLOOR, min(BEHAVIOR_CAP, raw))
+    if modifier:
+        parts = [f"{b.get(k, 0)} {k.replace('_', ' ')}" for k in BEHAVIOR_POINTS if b.get(k, 0)]
+        factors.append({"key": "behavioral_response", "label": "Behavioural response", "category": "behavior",
+                        "weight": BEHAVIOR_CAP, "points": float(modifier),
+                        "detail": "; ".join(parts) or "no interactions"})
 
-    score = min(100.0, round(base + behavior, 1))
+    score = max(0.0, min(100.0, round(base + modifier, 1)))
     level = "low" if score < 35 else "medium" if score < 65 else "high" if score < 85 else "critical"
     return score, level, factors

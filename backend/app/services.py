@@ -14,9 +14,22 @@ from .core.config import settings
 
 def simulation_url(session_id): return settings.frontend_url.rstrip('/')+f"/simulate/{session_id}"
 def audit(db,action,etype,eid=None,details=None): db.add(AuditEvent(action=action,entity_type=etype,entity_id=eid,details=details or {}))
+def _behavior_outcomes(db,employee):
+    """Classify each of the persona's simulations by its terminal outcome (mutually
+    exclusive) so reporting is rewarded, not penalised for the click that reached it.
+    Completed training assignments count as remediation."""
+    out={"submitted":0,"clicked_only":0,"reported":0,"training_completed":0}
+    targets=db.scalars(select(CampaignTarget).where(CampaignTarget.employee_id==employee.id)).all()
+    for t in targets:
+        types={e.event_type for e in db.scalars(select(InteractionEvent).where(InteractionEvent.session_id==t.session_id)).all()}
+        if "simulation_reported" in types: out["reported"]+=1           # caught it — precedence over the click
+        elif "credential_simulation_submitted" in types: out["submitted"]+=1
+        elif "link_clicked" in types: out["clicked_only"]+=1
+    out["training_completed"]=db.scalar(select(func.count()).select_from(TrainingAssignment).where(TrainingAssignment.employee_id==employee.id,TrainingAssignment.status=="completed")) or 0
+    return out
+
 def recalc_risk(db,employee):
-    prior=db.scalar(select(func.count()).select_from(InteractionEvent).where(InteractionEvent.employee_id==employee.id, InteractionEvent.event_type.in_(["link_clicked","credential_simulation_submitted"]))) or 0
-    score,level,factors=calculate(employee,prior)
+    score,level,factors=calculate(employee,_behavior_outcomes(db,employee))
     rp=db.scalar(select(RiskProfile).where(RiskProfile.employee_id==employee.id))
     if rp: rp.score=score; rp.level=level; rp.factors=factors; rp.calculated_at=datetime.now(timezone.utc)
     else: rp=RiskProfile(employee_id=employee.id,score=score,level=level,factors=factors); db.add(rp)

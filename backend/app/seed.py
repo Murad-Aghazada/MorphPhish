@@ -74,6 +74,9 @@ def seed():
                 db.add(InteractionEvent(campaign_id=c.id, employee_id=e.id, session_id=t.session_id, event_type=et,
                                         occurred_at=base + timedelta(minutes=minutes),
                                         safe_metadata={"credential_submitted": True} if et == "credential_simulation_submitted" else {}))
+        db.flush()
+        for e in db.scalars(select(Employee)).all():   # reflect seeded outcomes in each persona's risk
+            recalc_risk(db, e)
         db.commit()
     finally:
         db.close()

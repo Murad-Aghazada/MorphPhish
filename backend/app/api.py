@@ -198,7 +198,8 @@ def event(session_id:str,body:EventIn,db:Session=Depends(get_db)):
     if body.event_type in TERMINAL_EVENTS:
         sc=db.get(Scenario,db.get(Campaign,t.campaign_id).scenario_id)
         if sc and sc.status==ScenarioStatus.ACTIVE.value: sc.status=ScenarioStatus.COMPLETED.value
-    db.flush(); audit(db,"simulation_event","campaign",t.campaign_id,{"event_type":body.event_type}); db.commit(); return ev
+    db.flush(); recalc_risk(db,db.get(Employee,t.employee_id))  # outcome changes the persona's risk
+    audit(db,"simulation_event","campaign",t.campaign_id,{"event_type":body.event_type}); db.commit(); return ev
 STAGE_EVENT={"opened":"email_opened","clicked":"link_clicked","submitted":"credential_simulation_submitted","reported":"simulation_reported"}
 @router.get('/scenarios/{id}/result')
 def scenario_result(id:str,db:Session=Depends(get_db)):
@@ -242,10 +243,15 @@ def training_assign(body:TrainingAssignRequest,db:Session=Depends(get_db)):
     db.commit(); return {"id":a.id,"employee_id":a.employee_id,"topic":a.topic,"priority":a.priority,"status":a.status,"assigned_at":a.assigned_at.isoformat()}
 @router.post('/training/{id}/complete')
 def training_complete(id:str,db:Session=Depends(get_db)):
-    a=one(db,TrainingAssignment,id); complete_training(db,a); db.commit()
-    return {"id":a.id,"status":a.status,"completed_at":a.completed_at.isoformat()}
+    a=one(db,TrainingAssignment,id); complete_training(db,a); db.flush()
+    emp=db.get(Employee,a.employee_id)
+    if emp: recalc_risk(db,emp)                 # completed training reduces risk (remediation)
+    db.commit(); return {"id":a.id,"status":a.status,"completed_at":a.completed_at.isoformat()}
 @router.delete('/training/{id}',status_code=204)
 def training_delete(id:str,db:Session=Depends(get_db)):
-    a=one(db,TrainingAssignment,id); db.delete(a); audit(db,"training_removed","training",id,{"topic":a.topic}); db.commit()
+    a=one(db,TrainingAssignment,id); emp_id=a.employee_id; was_completed=a.status=="completed"
+    db.delete(a); db.flush()
+    if was_completed and (emp:=db.get(Employee,emp_id)): recalc_risk(db,emp)
+    audit(db,"training_removed","training",id,{"topic":a.topic}); db.commit()
 @router.get('/audit')
 def audit_events(db:Session=Depends(get_db)): return [{"action":x.action,"entity_type":x.entity_type,"entity_id":x.entity_id,"details":x.details,"created_at":x.created_at} for x in db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(100)).all()]

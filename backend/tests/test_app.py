@@ -16,6 +16,29 @@ def test_end_to_end_and_password_never_persisted(client):
     audit=client.get('/api/v1/audit').text; assert secret not in audit
     a=client.get(f"/api/v1/campaigns/{c['id']}/analytics").json(); assert a['submission_rate']==100.0
 
+def test_reporting_lowers_risk_submitting_raises_it(client):
+    e=client.post('/api/v1/employees',json=employee_payload('scoring@demo.example.com')).json()
+    base=client.get(f"/api/v1/employees/{e['id']}/risk").json()['score']
+    def run(outcome):
+        s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
+        client.post(f"/api/v1/scenarios/{s['id']}/approve")
+        sess=client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).json()['session_id']
+        client.post(f'/api/v1/simulation/{sess}/event',json={"session_id":sess,"event_type":"link_clicked"})
+        client.post(f'/api/v1/simulation/{sess}/event',json={"session_id":sess,"event_type":outcome})
+    # Reporting — even though reaching the report button required a click — must NOT raise risk.
+    run("simulation_reported")
+    reported=client.get(f"/api/v1/employees/{e['id']}/risk").json()
+    assert reported['score']<base
+    assert any(f['key']=='behavioral_response' and f['points']<0 for f in reported['factors'])
+    # A submitted simulation raises risk above baseline.
+    run("credential_simulation_submitted")
+    after=client.get(f"/api/v1/employees/{e['id']}/risk").json()['score']
+    assert after>base
+    # Completing assigned training reduces risk again (remediation).
+    a=client.post('/api/v1/training/assign',json={'employee_id':e['id'],'topic':'credential hygiene'}).json()
+    client.post(f"/api/v1/training/{a['id']}/complete")
+    assert client.get(f"/api/v1/employees/{e['id']}/risk").json()['score']<after
+
 def test_training_assign_complete_remove(client):
     e=client.post('/api/v1/employees',json=employee_payload('train@demo.example.com')).json()
     grp=next(g for g in client.get('/api/v1/training').json() if g['employee_id']==e['id'])
