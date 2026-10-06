@@ -99,7 +99,7 @@ function Glyph() {
 }
 const pages = [
   ['/', 'Dashboard'], ['/employees', 'Employees'], ['/simulations', 'Simulations'],
-  ['/archive', 'Archive'], ['/analytics', 'Analytics'], ['/recommendations', 'Training'], ['/status', 'System'],
+  ['/archive', 'Archive'], ['/analytics', 'Analytics'], ['/recommendations', 'Training'],
 ];
 function ModeChip() {
   const [h] = useLoad('/health');
@@ -869,35 +869,6 @@ function Training() {
 }
 
 /* ------------------------------------------------------------------ system */
-function Status() {
-  const [h, e] = useLoad('/health');
-  if (e) return <Err e={e} />;
-  if (!h) return <Load />;
-  const labels = { llm: 'Content generation', campaign: 'Campaign engine', email: 'Email delivery' };
-  return (
-    <>
-      <Head eyebrow="Integration status" title="System" sub="Mock mode exercises the same service interfaces as real integrations." />
-      <div className="card">
-        <div className="row" style={{ marginBottom: 18 }}>
-          <div><div className="eyebrow">Service</div><div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 600 }}>{h.app}</div></div>
-          <Badge kind={h.status === 'ok' ? 'low' : 'critical'}>{h.status === 'ok' ? 'operational' : h.status}</Badge>
-        </div>
-        <div className="chips">
-          {Object.entries(h.mode).map(([k, v]) => {
-            const mock = v === 'mock';
-            return (
-              <div className="provider" key={k}>
-                <div className="k">{labels[k] || k}</div>
-                <div className="v">{v}</div>
-                <div className={'state ' + (mock ? 'mock' : 'live')}><span className="dot" />{mock ? 'mock (offline)' : 'live provider'}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </>
-  );
-}
 
 /* ------------------------------------------------------------------ victim landing
    A realistic corporate-portal sign-in page. No upfront disclosure — following
@@ -996,7 +967,6 @@ function App() {
             <Route path="/archive" element={<Archive />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/recommendations" element={<Training />} />
-            <Route path="/status" element={<Status />} />
           </Routes>
         </Layout>
       } />

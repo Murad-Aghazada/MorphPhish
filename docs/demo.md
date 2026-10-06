@@ -14,6 +14,6 @@
 12. Open **Archive** to show finished runs (recipient submitted/reported, or a rejected draft) with filters by outcome, department, language, and difficulty — active runs stay under **Simulations**.
 13. Return to Analytics and show the role + department human-risk map: funnel, per-dimension engagement bars, risk distribution, and the accessible metric tables.
 13. Open Training Recommendations and show deterministic corrective guidance.
-14. Open System to show mock/real provider selection.
+14. Point to the sidebar mode chip (synthetic/mock vs live providers) — the adapter pattern lets each integration (LLM, campaign engine, email) swap between mock and real without code changes.
 15. Open Swagger at `http://localhost:8000/docs`.
 16. Close on the ethics framework: point to `docs/roe.md` (authorization, data minimization/pseudonymization, non-punitive use, and the post-campaign debrief).
