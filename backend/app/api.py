@@ -1,7 +1,5 @@
-import secrets
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Form, Request, Response
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 from .db import get_db
@@ -9,20 +7,30 @@ from .models import *
 from .schemas import *
 from .services import *
 from .core.config import settings
-router=APIRouter(prefix="/api/v1")
-_basic=HTTPBasic(auto_error=True)
-
-def require_admin(credentials:HTTPBasicCredentials=Depends(_basic)):
-    ok=secrets.compare_digest(credentials.username,settings.admin_username) and secrets.compare_digest(credentials.password,settings.admin_password)
-    if not ok: raise HTTPException(401,"Invalid admin credentials",headers={"WWW-Authenticate":"Basic"})
-    return credentials.username
+from .auth import require_auth, make_token, check_credentials, client_ip, login_guard_check, login_record_failure, login_record_success
+# Two routers: `public` is reachable without a session (health, login, and the
+# recipient-facing simulation endpoints); `router` gates every admin/API route
+# behind require_auth by default, so a new route is protected unless it is
+# deliberately placed on `public`.
+public=APIRouter(prefix="/api/v1")
+router=APIRouter(prefix="/api/v1",dependencies=[Depends(require_auth)])
+require_admin=require_auth  # back-compat alias for the launch routes
 
 def one(db,model,id):
     x=db.get(model,id)
     if not x: raise HTTPException(404,f"{model.__name__} not found")
     return x
-@router.get('/health')
+@public.get('/health')
 def health(): return {"status":"ok","app":settings.app_name,"mode":{"llm":settings.llm_provider,"campaign":settings.campaign_provider,"email":settings.email_provider}}
+@public.post('/auth/login',response_model=TokenOut)
+def login(body:LoginRequest,request:Request):
+    ip=client_ip(request); login_guard_check(ip)
+    if not check_credentials(body.username,body.password):
+        login_record_failure(ip); raise HTTPException(401,"Invalid username or password")
+    login_record_success(ip)
+    return TokenOut(access_token=make_token(body.username),expires_in=settings.token_ttl_minutes*60)
+@router.get('/auth/me')
+def me(user:str=Depends(require_auth)): return {"username":user}
 @router.get('/employees',response_model=list[EmployeeOut])
 def employees(db:Session=Depends(get_db)):
     rows=db.scalars(select(Employee).order_by(Employee.department,Employee.full_name)).all()
@@ -167,14 +175,14 @@ def _record_event(db,t,etype,meta=None):
     if ev: ev.occurred_at=datetime.now(timezone.utc); ev.safe_metadata=meta or {}
     else: ev=InteractionEvent(campaign_id=t.campaign_id,employee_id=t.employee_id,session_id=t.session_id,event_type=etype,safe_metadata=meta or {}); db.add(ev)
     return ev
-@router.get('/simulation/{session_id}/pixel.gif')
+@public.get('/simulation/{session_id}/pixel.gif')
 def open_pixel(session_id:str,db:Session=Depends(get_db)):
     # Email-open tracking pixel: viewing the message records email_opened. Always
     # returns the 1x1 GIF so the mail client never shows a broken image.
     t=db.scalar(select(CampaignTarget).where(CampaignTarget.session_id==session_id))
     if t: _record_event(db,t,"email_opened"); db.commit()
     return Response(content=_PIXEL,media_type="image/gif",headers={"Cache-Control":"no-store, no-cache, must-revalidate"})
-@router.get('/simulation/{session_id}',response_model=SimulationOut)
+@public.get('/simulation/{session_id}',response_model=SimulationOut)
 def simulation(session_id:str,db:Session=Depends(get_db)):
     t=db.scalar(select(CampaignTarget).where(CampaignTarget.session_id==session_id))
     if not t: raise HTTPException(404,"Simulation session not found")
@@ -184,7 +192,7 @@ def simulation(session_id:str,db:Session=Depends(get_db)):
     c=one(db,Campaign,t.campaign_id); s=one(db,Scenario,c.scenario_id); e=one(db,Employee,s.employee_id)
     if s.status==ScenarioStatus.CLOSED.value: raise HTTPException(410,"This simulation has ended")
     return SimulationOut(session_id=session_id,campaign_id=c.id,sender=_sender(e.department),recipient=f"{e.full_name} <{e.email}>",subject=s.subject,email_body=s.email_body,pretext=s.pretext,landing_page_message=s.landing_page_message,notice="AUTHORIZED SIMULATION — never enter a real password.")
-@router.post('/simulation/{session_id}/event',response_model=EventOut,status_code=201)
+@public.post('/simulation/{session_id}/event',response_model=EventOut,status_code=201)
 def event(session_id:str,body:EventIn,db:Session=Depends(get_db)):
     if body.session_id!=session_id: raise HTTPException(422,"Session mismatch")
     t=db.scalar(select(CampaignTarget).where(CampaignTarget.session_id==session_id))

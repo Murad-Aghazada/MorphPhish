@@ -17,12 +17,14 @@ services:
     image: axllent/mailpit:latest
     ports: ["8025:8025", "1025:1025"]
 
-  # Real campaign engine (optional). Set CAMPAIGN_PROVIDER=gophish to use it.
-  # Admin API/UI on 3333; phishing server on 8080. First boot prints an admin
-  # password in the logs — log in, then copy the API key from Account Settings.
-  # Configured via the image's env vars (SQLite, no TLS) for the local lab.
+  # Real campaign engine (opt-in). Start it with `docker compose --profile gophish up`
+  # and set CAMPAIGN_PROVIDER=gophish. Kept off by default so a normal deployment
+  # doesn't expose an extra admin surface. Admin API/UI on 3333; phishing server on
+  # 8080. First boot prints an admin password in the logs — log in, then copy the API
+  # key from Account Settings. Configured via the image's env vars (SQLite, no TLS).
   gophish:
     image: gophish/gophish:latest
+    profiles: ["gophish"]
     user: root                       # so GoPhish can write the SQLite DB on the named volume
     ports: ["3333:3333", "8080:80"]
     environment:
@@ -52,7 +54,9 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: ${BACKEND_URL:-http://localhost:8000}/api/v1
+        # Same-origin: the SPA calls /api/v1 and nginx proxies it to the backend,
+        # so there is no cross-origin exposure and security headers cover everything.
+        VITE_API_URL: ${VITE_API_URL:-/api/v1}
     depends_on:
       backend:
         condition: service_healthy

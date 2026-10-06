@@ -1,6 +1,8 @@
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 class ORM(BaseModel): model_config=ConfigDict(from_attributes=True)
+class LoginRequest(BaseModel): username:str=Field(min_length=1,max_length=150); password:str=Field(min_length=1,max_length=512,repr=False)
+class TokenOut(BaseModel): access_token:str; token_type:str="bearer"; expires_in:int
 class EmployeeCreate(BaseModel):
     full_name:str=Field(min_length=2,max_length=160); email:EmailStr; department:str; role:str; preferred_language:str="az"; privilege_level:int=Field(1,ge=1,le=5); access_sensitivity:int=Field(1,ge=1,le=5); social_exposure:int=Field(1,ge=1,le=5)
 class EmployeeUpdate(BaseModel):

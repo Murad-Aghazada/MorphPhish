@@ -2,9 +2,13 @@
 
 Swagger is available at `/docs`.
 
+**Authentication.** Full gate: every route below is protected and requires an admin session **except** `/health`, `/auth/login`, and the recipient-facing `/simulation/*` endpoints. `POST /auth/login` returns a signed bearer token (`Authorization: Bearer <token>`); HTTP Basic (`root:root`) is still accepted for scripted callers. Missing/expired/invalid session → **401**; too many failed logins → **429** with `Retry-After`.
+
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/health` | Health and provider mode |
+| GET | `/api/v1/health` | Health and provider mode (public) |
+| POST | `/api/v1/auth/login` | Exchange `{username, password}` for a session token (rate-limited + lockout) |
+| GET | `/api/v1/auth/me` | Current signed-in admin username |
 | GET/POST | `/api/v1/employees` | List/create synthetic personas |
 | GET | `/api/v1/hr/source` | Preview raw records from the HR data layer (adapter) |
 | POST | `/api/v1/hr/sync` | Import/update employees from the HR adapter (idempotent upsert) |
@@ -18,10 +22,10 @@ Swagger is available at `/docs`.
 | POST | `/api/v1/scenarios/{id}/approve` | Approval gate |
 | POST | `/api/v1/scenarios/{id}/reject` | Reject scenario |
 | POST | `/api/v1/scenarios/{id}/regenerate` | Regenerate the message **in place** (same scenario id; resets to REVIEW_REQUIRED) |
-| POST | `/api/v1/scenarios/{id}/launch` | **One-click launch** (requires admin HTTP Basic auth): create campaign + target + send; returns `simulation_url` |
+| POST | `/api/v1/scenarios/{id}/launch` | **One-click launch**: create campaign + target + send; returns `simulation_url` |
 | GET | `/api/v1/scenarios/{id}/result` | Per-target outcome of a launched scenario (which funnel stages each recipient reached) |
 | POST | `/api/v1/campaigns` | Create campaign from approved scenario (name optional; auto-derived) |
-| POST | `/api/v1/campaigns/{id}/launch` | Launch an existing DRAFT campaign (requires admin HTTP Basic auth); returns `simulation_url` |
+| POST | `/api/v1/campaigns/{id}/launch` | Launch an existing DRAFT campaign; returns `simulation_url` |
 | GET | `/api/v1/simulation/{session_id}` | Safe landing context (410 once the session is completed — the link is retired) |
 | GET | `/api/v1/simulation/{session_id}/pixel.gif` | Email-open tracking pixel: records `email_opened`, returns a 1x1 GIF |
 | POST | `/api/v1/simulation/{session_id}/event` | Store safe interaction event (idempotent per session + event_type); password value discarded |

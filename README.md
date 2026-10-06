@@ -7,25 +7,38 @@ FastAPI, SQLAlchemy, PostgreSQL, Alembic, React/Vite, Recharts, Docker Compose, 
 
 ## Safety properties
 - synthetic data by default;
+- the admin console is fully gated — every API route except `/health`, `/auth/login`, and the recipient-facing `/simulation/*` endpoints requires a signed admin session;
+- login is rate-limited with a lockout window to blunt brute-force;
+- the backend refuses to start in `APP_ENV=production` while the default admin password / signing secret are still in place;
 - human approval required before campaign execution;
 - no malware/payload generation;
-- external SMTP is domain allow-listed;
+- delivery is hard-gated to `AUTHORIZED_EMAIL_DOMAINS` at launch for every provider;
 - real password values are never needed and are immediately discarded if submitted to the simulation endpoint;
 - audit logs exclude secrets;
 - mock mode is the default.
+
+## Signing in
+The console requires sign-in. Demo credentials: **root / root** (set via `ADMIN_USERNAME`/`ADMIN_PASSWORD`). Sessions are signed bearer tokens that expire after `TOKEN_TTL_MINUTES` (default 8h).
 
 ## Quick start
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
-The backend container automatically runs Alembic and synthetic seeding.
+The backend container automatically runs Alembic and synthetic seeding. Open http://localhost:3000 and sign in with **root / root**.
 
 URLs:
-- Frontend: http://localhost:3000
-- Backend: http://localhost:8000
+- Frontend (+ same-origin API proxy): http://localhost:3000
+- Backend (direct): http://localhost:8000
 - Swagger: http://localhost:8000/docs
 - Mailpit UI (when SMTP provider is enabled for local testing): http://localhost:8025
+- GoPhish (opt-in): `docker compose --profile gophish up` — admin UI http://localhost:3333
+
+## Production deployment (single host)
+1. `cp .env.example .env`, then set `APP_ENV=production`, a strong `APP_SECRET_KEY` (`python -c "import secrets;print(secrets.token_urlsafe(32))"`), a strong `ADMIN_PASSWORD`, and real DB credentials. The backend refuses to boot in production with the defaults.
+2. `docker compose up -d --build`. nginx serves the SPA and reverse-proxies `/api` to the backend (same origin → no CORS; security headers + CSP applied to everything).
+3. Put a TLS-terminating proxy in front of port 3000 (or add a `listen 443 ssl` server block to `frontend/nginx.conf`). The backend emits HSTS in production.
+4. For production, set `SEED_ON_START=false` so demo personas aren't created.
 
 ## Provider configuration
 Default: `LLM_PROVIDER=mock`, `CAMPAIGN_PROVIDER=mock`, `EMAIL_PROVIDER=mock`.

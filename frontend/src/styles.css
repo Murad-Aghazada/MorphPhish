@@ -262,6 +262,13 @@ button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 .loginbtn { width: 100%; margin-top: 12px; padding: 12px; font-size: 15px; }
 .reportlink { width: 100%; margin-top: 10px; background: none; border: none; color: var(--muted); font-size: 12.5px; text-decoration: underline; cursor: pointer; padding: 6px; }
 .reportlink:hover { color: var(--ink); }
+.logincard form, .logincard.debrief { }
+.logincard label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 14px 0 6px; }
+.logincard input { width: 100%; padding: 11px 12px; font-size: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); color: var(--ink); box-sizing: border-box; }
+.logincard input:focus { outline: none; border-color: var(--iris); }
+.loginerr { margin: 14px 0 0; padding: 9px 12px; font-size: 13px; color: var(--risk-critical); background: color-mix(in srgb, var(--risk-critical) 12%, transparent); border-radius: 9px; }
+.logoutbtn { width: 100%; margin-top: 8px; padding: 9px; font-size: 13px; background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 9px; cursor: pointer; }
+.logoutbtn:hover { color: var(--ink); border-color: var(--iris); }
 .logincard.debrief { max-width: 480px; }
 .debrief-tag { display: inline-block; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: .03em; padding: 6px 12px; border-radius: 999px; margin-bottom: 14px; }
 .debrief-tag.good { color: var(--risk-low); background: color-mix(in srgb, var(--risk-low) 14%, transparent); border: 1px solid color-mix(in srgb, var(--risk-low) 40%, transparent); }

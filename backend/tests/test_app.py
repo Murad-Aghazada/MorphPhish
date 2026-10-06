@@ -207,15 +207,40 @@ def test_russian_generation(client):
     from app.llm import prompts
     assert prompts.normalize_language('ru') == 'ru' and 'Russian' in prompts.LANGUAGES.values()
 
-def test_launch_requires_admin_credentials(client):
+def test_launch_requires_admin_credentials(client,anon):
     import base64
     e=client.post('/api/v1/employees',json=employee_payload('auth@demo.example.com')).json()
     s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
     client.post(f"/api/v1/scenarios/{s['id']}/approve")
-    assert client.post(f"/api/v1/scenarios/{s['id']}/launch").status_code==401          # no creds
+    assert anon.post(f"/api/v1/scenarios/{s['id']}/launch").status_code==401          # no session
     bad={"Authorization":"Basic "+base64.b64encode(b'root:wrong').decode()}
-    assert client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=bad).status_code==401  # wrong creds
-    assert client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).status_code==200  # correct
+    assert anon.post(f"/api/v1/scenarios/{s['id']}/launch",headers=bad).status_code==401  # wrong creds
+    assert anon.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).status_code==200  # Basic still accepted
+    # a re-launch via the authenticated (bearer) console client is blocked by state, not auth
+    assert client.post(f"/api/v1/scenarios/{s['id']}/launch").status_code!=401
+
+def test_auth_login_me_and_gating(anon):
+    # full gate: protected endpoints reject anonymous callers
+    assert anon.get('/api/v1/employees').status_code==401
+    assert anon.post('/api/v1/employees',json=employee_payload('x@demo.example.com')).status_code==401
+    assert anon.get('/api/v1/audit').status_code==401
+    assert anon.get('/api/v1/auth/me').status_code==401
+    # health + simulation lookup stay public
+    assert anon.get('/api/v1/health').status_code==200
+    # login issues a token that unlocks the API and identifies the user
+    assert anon.post('/api/v1/auth/login',json={'username':'root','password':'nope'}).status_code==401
+    tok=anon.post('/api/v1/auth/login',json={'username':'root','password':'root'}).json()['access_token']
+    h={"Authorization":f"Bearer {tok}"}
+    assert anon.get('/api/v1/auth/me',headers=h).json()['username']=='root'
+    assert anon.get('/api/v1/employees',headers=h).status_code==200
+    assert anon.get('/api/v1/employees',headers={"Authorization":"Bearer not.a.real.token"}).status_code==401
+
+def test_login_lockout(anon):
+    for _ in range(5): assert anon.post('/api/v1/auth/login',json={'username':'root','password':'bad'}).status_code==401
+    locked=anon.post('/api/v1/auth/login',json={'username':'root','password':'bad'})
+    assert locked.status_code==429 and 'Retry-After' in locked.headers
+    # even correct creds are refused while locked out
+    assert anon.post('/api/v1/auth/login',json={'username':'root','password':'root'}).status_code==429
 
 def test_launch_blocked_for_unauthorized_recipient_domain(client):
     # The authorized-domain allow-list is a hard launch gate for every provider,

@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     app_secret_key: str = "change-me"
     admin_username: str = "root"
     admin_password: str = "root"
+    token_ttl_minutes: int = 480            # admin session lifetime (8h)
+    login_max_attempts: int = 5             # failed sign-ins before lockout
+    login_lockout_minutes: int = 15         # lockout duration per client IP
     database_url: str = "sqlite:///./riskintern.db"
     cors_origins: str = "http://localhost:3000"
     frontend_url: str = "http://localhost:3000"

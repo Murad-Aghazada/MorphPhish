@@ -2,8 +2,58 @@ import React, { useEffect, useRef, useState, useCallback, useContext, createCont
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, NavLink, useParams } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, LabelList } from 'recharts';
-import { api } from './api';
+import { api, setToken, getToken } from './api';
 import './styles.css';
+
+/* ------------------------------------------------------------------ auth */
+const AuthCtx = createContext({ authed: false, login: async () => {}, logout: () => {} });
+const useAuth = () => useContext(AuthCtx);
+function AuthProvider({ children }) {
+  const [authed, setAuthed] = useState(() => !!getToken());
+  const [ready, setReady] = useState(() => !getToken()); // if no token, nothing to validate
+  useEffect(() => {
+    const onUnauth = () => setAuthed(false);
+    window.addEventListener('mp-unauthorized', onUnauth);
+    return () => window.removeEventListener('mp-unauthorized', onUnauth);
+  }, []);
+  useEffect(() => {
+    if (!getToken()) return;
+    api('/auth/me').then(() => setAuthed(true)).catch(() => { setToken(''); setAuthed(false); }).finally(() => setReady(true));
+  }, []);
+  const login = useCallback(async (u, p) => {
+    const r = await api('/auth/login', { method: 'POST', body: JSON.stringify({ username: u, password: p }) });
+    setToken(r.access_token); setAuthed(true); setReady(true);
+  }, []);
+  const logout = useCallback(() => { setToken(''); setAuthed(false); }, []);
+  return <AuthCtx.Provider value={{ authed, ready, login, logout }}>{children}</AuthCtx.Provider>;
+}
+function Login() {
+  const { login } = useAuth();
+  const [u, setU] = useState('');
+  const [p, setP] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    if (e) e.preventDefault();
+    setBusy(true); setErr('');
+    try { await login(u.trim(), p); } catch (x) { setErr(x.message); } finally { setBusy(false); }
+  };
+  return (
+    <div className="loginwrap">
+      <form className="logincard" onSubmit={submit}>
+        <div className="wordmark" style={{ justifyContent: 'center', marginBottom: 4 }}><Glyph />MorphPhish</div>
+        <div className="tag" style={{ textAlign: 'center', marginBottom: 18 }}>admin console sign-in</div>
+        <label>Username</label>
+        <input autoFocus value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" />
+        <label>Password</label>
+        <input type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" />
+        {err && <p className="loginerr">{err}</p>}
+        <button className="loginbtn" disabled={busy || !u || !p} type="submit">{busy ? 'Signing in…' : 'Sign in'}</button>
+        <span className="muted" style={{ fontSize: 12, textAlign: 'center', marginTop: 10 }}>Demo credentials: root / root</span>
+      </form>
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ theme */
 const ThemeCtx = createContext({ theme: 'light', toggle: () => {} });
@@ -126,6 +176,7 @@ function ThemeToggle() {
   );
 }
 function Layout({ children }) {
+  const { logout } = useAuth();
   return (
     <div className="shell">
       <aside>
@@ -140,6 +191,7 @@ function Layout({ children }) {
         <div className="side-foot">
           <ModeChip />
           <ThemeToggle />
+          <button className="logoutbtn" onClick={logout}>Sign out</button>
         </div>
       </aside>
       <main><div className="page">{children}</div></main>
@@ -449,8 +501,6 @@ function ScenarioCard({ s, onChange }) {
   const [edit, setEdit] = useState(false);
   const [f, setF] = useState({ subject: s.subject, email_body: s.email_body, pretext: s.pretext, landing_page_message: s.landing_page_message });
   const [launch, setLaunch] = useState(null);
-  const [auth, setAuth] = useState(false);
-  const [cred, setCred] = useState({ u: '', p: '' });
   const [result, setResult] = useState(null);
   const editable = EDITABLE.has(s.status);
   const loadResult = async () => { try { setResult(await api(`/scenarios/${s.id}/result`)); } catch { /* ignore */ } };
@@ -466,9 +516,8 @@ function ScenarioCard({ s, onChange }) {
   const stale = idleDays != null && idleDays >= STALE_DAYS;
   const dateLabel = (s.outcome && s.outcome.launched_at) ? 'Launched ' + fmtDate(s.outcome.launched_at) : 'Generated ' + fmtDate(s.created_at);
   const doLaunch = async () => {
-    const auth64 = btoa(`${cred.u}:${cred.p}`);
-    const r = await run(() => api(`/scenarios/${s.id}/launch`, { method: 'POST', headers: { Authorization: 'Basic ' + auth64 }, body: JSON.stringify({}) }), 'Simulation launched.');
-    if (r) { setLaunch(r); setAuth(false); setCred({ u: '', p: '' }); }
+    const r = await run(() => api(`/scenarios/${s.id}/launch`, { method: 'POST', body: JSON.stringify({}) }), 'Simulation launched.');
+    if (r) setLaunch(r);
   };
   return (
     <div className="card scen">
@@ -511,21 +560,8 @@ function ScenarioCard({ s, onChange }) {
           {editable && <button className="secondary" onClick={regen}>Regenerate</button>}
           {s.status === 'REVIEW_REQUIRED' && <button onClick={() => act('approve', 'Scenario approved.')}>Approve</button>}
           {editable && <button className="ghost" onClick={() => act('reject', 'Scenario rejected.')}>Reject</button>}
-          {s.status === 'APPROVED' && !auth && <button onClick={() => setAuth(true)}>Launch simulation</button>}
+          {s.status === 'APPROVED' && <button onClick={doLaunch}>Launch simulation</button>}
           {awaiting && <button className="ghost" onClick={close} title="No terminal response — move to Archive">Close as no-response</button>}
-        </div>
-      )}
-      {!edit && auth && (
-        <div className="editform" style={{ maxWidth: 360 }}>
-          <label>Admin sign-in required to launch</label>
-          <input placeholder="username" value={cred.u} onChange={(e) => setCred({ ...cred, u: e.target.value })} />
-          <input placeholder="password" type="password" value={cred.p} onChange={(e) => setCred({ ...cred, p: e.target.value })}
-            onKeyDown={(e) => e.key === 'Enter' && doLaunch()} />
-          <div className="actions">
-            <button disabled={!cred.u || !cred.p} onClick={doLaunch}>Confirm &amp; launch</button>
-            <button className="secondary" onClick={() => { setAuth(false); setCred({ u: '', p: '' }); }}>Cancel</button>
-          </div>
-          <span className="muted" style={{ fontSize: 12 }}>Demo credentials: root / root</span>
         </div>
       )}
       {launch && (
@@ -953,26 +989,32 @@ function Sim() {
 }
 
 /* ------------------------------------------------------------------ root */
+function Console() {
+  const { authed } = useAuth();
+  if (!authed) return <Login />;
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/employees" element={<Employees />} />
+        <Route path="/employees/:id" element={<Employee />} />
+        <Route path="/simulations" element={<Simulations />} />
+        <Route path="/archive" element={<Archive />} />
+        <Route path="/analytics" element={<Analytics />} />
+        <Route path="/recommendations" element={<Training />} />
+      </Routes>
+    </Layout>
+  );
+}
 function App() {
   return (
     <Routes>
+      {/* recipient-facing simulation link stays public — recipients are not admins */}
       <Route path="/simulate/:sid" element={<Sim />} />
-      <Route path="*" element={
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/employees" element={<Employees />} />
-            <Route path="/employees/:id" element={<Employee />} />
-            <Route path="/simulations" element={<Simulations />} />
-            <Route path="/archive" element={<Archive />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/recommendations" element={<Training />} />
-          </Routes>
-        </Layout>
-      } />
+      <Route path="*" element={<Console />} />
     </Routes>
   );
 }
 createRoot(document.getElementById('root')).render(
-  <ThemeProvider><ToastProvider><BrowserRouter><App /></BrowserRouter></ToastProvider></ThemeProvider>
+  <ThemeProvider><ToastProvider><AuthProvider><BrowserRouter><App /></BrowserRouter></AuthProvider></ToastProvider></ThemeProvider>
 );
