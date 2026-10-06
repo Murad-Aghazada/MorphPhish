@@ -7,9 +7,9 @@ from .risk import calculate
 from .adapters.context import MockContextAdapter
 from .adapters.hr import get_hr_adapter, FIELDS as HR_FIELDS
 from .llm.providers import get_llm_provider
-from .llm.prompts import normalize_language, safe_landing
+from .llm.prompts import normalize_language, safe_landing, DEPARTMENT_THEMES, DEFAULT_THEME
 from .integrations.campaign import get_campaign_provider
-from .integrations.email import get_email_provider
+from .integrations.email import get_email_provider, build_email_html
 from .core.config import settings
 
 def simulation_url(session_id): return settings.frontend_url.rstrip('/')+f"/simulate/{session_id}"
@@ -145,7 +145,13 @@ def score_scenario(db,scenario):
 def launch_campaign(db,campaign,scenario,employee):
     if scenario.status!=ScenarioStatus.APPROVED.value: raise ValueError("Scenario must be approved before campaign launch")
     target=CampaignTarget(campaign_id=campaign.id,employee_id=employee.id); db.add(target); db.flush()
-    result=get_campaign_provider().create_campaign(campaign,scenario,target); get_email_provider().send(employee.email,scenario.subject,scenario.email_body+f"\n\nSimulation link: {simulation_url(target.session_id)}")
+    url=simulation_url(target.session_id); lang=normalize_language(scenario.language)
+    team=(DEPARTMENT_THEMES.get(employee.department,DEFAULT_THEME))["team"][lang]
+    cta={"az":"Hesaba daxil ol","ru":"Войти в аккаунт"}.get(lang,"Sign in to continue")
+    text=f"{scenario.email_body}\n\n{cta}: {url}"
+    html_body=build_email_html(team,scenario.subject,scenario.email_body,url,cta)
+    result=get_campaign_provider().create_campaign(campaign,scenario,target)
+    get_email_provider().send(employee.email,scenario.subject,text,html_body=html_body,from_name=team)
     campaign.status=CampaignStatus.ACTIVE.value; campaign.started_at=datetime.now(timezone.utc); campaign.provider_campaign_id=str(result.get("id","")); target.delivered_at=datetime.now(timezone.utc); scenario.status=ScenarioStatus.ACTIVE.value; audit(db,"campaign_started","campaign",campaign.id,{"provider":campaign.provider}); return target
 
 # ---------------------------------------------------------------- analytics (Week 4)

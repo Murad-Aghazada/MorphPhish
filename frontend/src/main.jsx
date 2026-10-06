@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useContext, createContext } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useContext, createContext } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, NavLink, useParams } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, LabelList } from 'recharts';
@@ -635,63 +635,74 @@ function Status() {
   );
 }
 
-/* ------------------------------------------------------------------ victim landing */
+/* ------------------------------------------------------------------ victim landing
+   A realistic corporate-portal sign-in page. No upfront disclosure — following
+   the email link is itself the click (recorded on mount); the teachable-moment
+   debrief appears only AFTER the person submits or reports. The password is
+   discarded by the backend and never leaves the browser as anything stored. */
+const RED_FLAGS = [
+  'Unexpected urgency or a same-day deadline pushing you to act fast',
+  'A button or link asking you to “sign in” or “verify” your account',
+  'A sender or team you did not expect — even if the name looks familiar',
+  'Any page asking for your password after you followed a link in an email',
+];
 function Sim() {
   const { sid } = useParams();
   const [d, e] = useLoad('/simulation/' + sid);
-  const toast = useToast();
-  const [done, setDone] = useState('');
-  const [opened, setOpened] = useState(false);
-  const ev = async (type, pw) => {
-    try {
-      await api(`/simulation/${sid}/event`, { method: 'POST', body: JSON.stringify({ session_id: sid, event_type: type, password: pw }) });
-      setDone(type);
-      const notes = {
-        link_clicked: 'Link click recorded — in a real attack this is where you land on a fake page.',
-        form_viewed: 'Form view recorded.',
-        credential_simulation_submitted: 'Recorded. Any value you typed was discarded immediately — never stored.',
-        simulation_reported: 'Nicely done — reporting is exactly the right move.',
-      };
-      toast(notes[type] || 'Recorded.', type === 'simulation_reported' ? 'ok' : 'info');
-    } catch (x) { toast(x.message, 'err'); }
-  };
+  const [phase, setPhase] = useState('login');   // 'login' | 'debrief'
+  const [outcome, setOutcome] = useState(null);   // 'submitted' | 'reported'
+  const [pw, setPw] = useState('');
+  const landed = useRef(false);
+  const viewed = useRef(false);
+  const ev = (type, password) =>
+    api(`/simulation/${sid}/event`, { method: 'POST', body: JSON.stringify({ session_id: sid, event_type: type, password }) }).catch(() => {});
+  useEffect(() => { if (d && !landed.current) { landed.current = true; ev('link_clicked'); } }, [d]);
+  const submit = () => { ev('credential_simulation_submitted', pw); setOutcome('submitted'); setPhase('debrief'); };
+  const report = () => { ev('simulation_reported'); setOutcome('reported'); setPhase('debrief'); };
+
   if (e) return <div className="landing"><Err e={e} /></div>;
   if (!d) return <div className="landing"><Load /></div>;
   const recipientEmail = (d.recipient.match(/<(.+)>/) || [])[1] || d.recipient;
-  return (
-    <div className="landing">
-      <div className="banner">⚠ AUTHORIZED SECURITY-AWARENESS SIMULATION — this is a training exercise. Never enter a real password.</div>
+  const brand = (d.sender || '').split(' <')[0] || 'Account Services';
 
-      <div className="mailcard">
-        <div className="mailhead">
-          <div className="mrow"><span>From</span><b>{d.sender}</b></div>
-          <div className="mrow"><span>To</span><span className="muted">{d.recipient}</span></div>
-          <div className="mrow"><span>Subject</span><b>{d.subject}</b></div>
-        </div>
-        <div className="mailbody">
-          <p>{d.email_body}</p>
-          <button onClick={() => { setOpened(true); ev('link_clicked'); }}>Open secure portal →</button>
+  if (phase === 'debrief') {
+    const reported = outcome === 'reported';
+    return (
+      <div className="loginwrap">
+        <div className="logincard debrief">
+          <div className={'debrief-tag ' + (reported ? 'good' : 'warn')}>
+            {reported ? '✓ You reported it — exactly right' : '⚠ This was a simulation'}
+          </div>
+          <h2>Authorized security-awareness simulation</h2>
+          <p className="disclose-text">{d.landing_page_message}</p>
+          {!reported && <p className="muted">You submitted on a simulated sign-in page. In a real attack this is the moment credentials are stolen — but here nothing you typed was stored, hashed, logged, or sent anywhere.</p>}
+          <div className="flags">
+            <div className="flags-title">What to watch for next time</div>
+            <ul>{RED_FLAGS.map((f, i) => <li key={i}>{f}</li>)}</ul>
+          </div>
+          <p className="muted small">This was part of an authorized, non-punitive training exercise using synthetic data. Questions go to your security team.</p>
         </div>
       </div>
-
-      <div className="card portal">
-        <div className="eyebrow">corp-portal.example</div>
-        <h3 style={{ marginTop: 6 }}>Sign in to continue</h3>
-        <p className="muted" style={{ marginTop: 0 }}>You reached this page by following the link in the message above. In a real attack, this page would steal whatever you type.</p>
+    );
+  }
+  return (
+    <div className="loginwrap">
+      <div className="logincard">
+        <div className="loginbrand">{brand}</div>
+        <h2>Sign in</h2>
+        <p className="muted">Sign in to continue to your account.</p>
         <div className="editform">
           <label>Email</label>
           <input value={recipientEmail} readOnly />
-          <label>Password — simulation value only, never a real one</label>
-          <input id="pw" type="password" placeholder="Type a fake demo value" onFocus={() => !opened && ev('form_viewed')} />
+          <label>Password</label>
+          <input type="password" value={pw} placeholder="Enter your password"
+            onFocus={() => { if (!viewed.current) { viewed.current = true; ev('form_viewed'); } }}
+            onChange={(ev2) => setPw(ev2.target.value)}
+            onKeyDown={(ev2) => ev2.key === 'Enter' && submit()} />
         </div>
-        <div className="actions">
-          <button onClick={() => ev('credential_simulation_submitted', document.getElementById('pw').value)}>Sign in</button>
-          <button className="ghost" onClick={() => ev('simulation_reported')}>This looks like phishing — report it</button>
-        </div>
+        <button className="loginbtn" onClick={submit}>Sign in</button>
+        <button className="reportlink" onClick={report}>Report this message as phishing</button>
       </div>
-
-      <div className="disclose">{d.landing_page_message}</div>
-      {done && <p className="muted" style={{ textAlign: 'center' }}>Safe simulation complete — your “{done.replace(/_/g, ' ')}” response was recorded for awareness training. No credentials were stored.</p>}
     </div>
   );
 }

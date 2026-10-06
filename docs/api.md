@@ -49,7 +49,16 @@ Important errors: 404 unknown IDs/sessions, 409 invalid lifecycle transition or 
 
 ## Email delivery (Week 4)
 
-`launch` sends the simulation email through the configured email provider. Set `EMAIL_PROVIDER=smtp`
-to deliver to the bundled **Mailpit** test inbox (the local stand-in for Mailtrap) at
-`http://localhost:8025`; recipients are constrained to `AUTHORIZED_EMAIL_DOMAINS`. `EMAIL_PROVIDER=mock`
-(the test default) records nothing externally.
+`launch` sends the simulation email through the configured email provider as a realistic
+**multipart/alternative** message: a plain-text part plus a branded HTML part with a
+styled call-to-action button (`build_email_html`). The From display name is the impersonated
+team and the subject/CTA are localized per persona (AZ/EN/RU); the From address stays the
+authorized `SMTP_FROM`. Set `EMAIL_PROVIDER=smtp` to deliver to the bundled **Mailpit** test
+inbox (the local stand-in for Mailtrap) at `http://localhost:8025`, which renders the HTML in
+full; recipients are constrained to `AUTHORIZED_EMAIL_DOMAINS`. `EMAIL_PROVIDER=mock` (the test
+default) records nothing externally.
+
+The landing page (`/simulate/{session_id}`) is a realistic sign-in page with no upfront
+disclosure — following the link records the click, and the teachable-moment debrief (safety
+disclosure + red flags) appears only after the person submits or reports. The submitted value
+is discarded as always.

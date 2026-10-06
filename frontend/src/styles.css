@@ -250,6 +250,28 @@ button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 .disclose { margin-top: 18px; padding: 14px 16px; border-radius: 12px; text-align: center; font-size: 13px; color: var(--muted); background: var(--surface-2); border: 1px dashed var(--border-strong); }
 .portal input[readonly] { color: var(--muted); background: var(--surface-2); cursor: not-allowed; }
 
+/* realistic sign-in landing + post-submit debrief */
+.loginwrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; background: var(--bg); }
+.logincard { width: 100%; max-width: 400px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); padding: 32px 30px; }
+.logincard h2 { margin: 6px 0 4px; font-size: 22px; }
+.logincard > p.muted { margin-top: 0; font-size: 14px; }
+.loginbrand { font-size: 17px; font-weight: 700; color: var(--iris); letter-spacing: .2px; }
+.logincard .editform { margin: 20px 0 8px; }
+.logincard .editform input[readonly] { color: var(--muted); background: var(--surface-2); }
+.loginbtn { width: 100%; margin-top: 12px; padding: 12px; font-size: 15px; }
+.reportlink { width: 100%; margin-top: 10px; background: none; border: none; color: var(--muted); font-size: 12.5px; text-decoration: underline; cursor: pointer; padding: 6px; }
+.reportlink:hover { color: var(--ink); }
+.logincard.debrief { max-width: 480px; }
+.debrief-tag { display: inline-block; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: .03em; padding: 6px 12px; border-radius: 999px; margin-bottom: 14px; }
+.debrief-tag.good { color: var(--risk-low); background: color-mix(in srgb, var(--risk-low) 14%, transparent); border: 1px solid color-mix(in srgb, var(--risk-low) 40%, transparent); }
+.debrief-tag.warn { color: var(--risk-medium); background: color-mix(in srgb, var(--risk-medium) 14%, transparent); border: 1px solid color-mix(in srgb, var(--risk-medium) 45%, transparent); }
+.debrief .disclose-text { line-height: 1.6; color: var(--ink-2); font-size: 14px; }
+.debrief .flags { margin-top: 18px; padding: 16px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.debrief .flags-title { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.debrief .flags ul { margin: 0; padding-left: 18px; }
+.debrief .flags li { margin: 6px 0; line-height: 1.5; font-size: 13.5px; color: var(--ink-2); }
+.muted.small { font-size: 12px; margin-top: 16px; }
+
 /* ---------- responsive ---------- */
 @media (max-width: 1000px) {
   .shell { grid-template-columns: 1fr; }
