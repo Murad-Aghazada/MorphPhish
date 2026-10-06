@@ -45,6 +45,9 @@ class InteractionEvent(Base):
 class TrainingRecommendation(Base):
     __tablename__="training_recommendations"
     id:Mapped[str]=mapped_column(String,primary_key=True,default=uid); employee_id:Mapped[str|None]=mapped_column(ForeignKey("employees.id",ondelete="CASCADE"),nullable=True,index=True); campaign_id:Mapped[str|None]=mapped_column(ForeignKey("campaigns.id",ondelete="CASCADE"),nullable=True,index=True); topic:Mapped[str]=mapped_column(String(80)); recommendation:Mapped[str]=mapped_column(Text); priority:Mapped[str]=mapped_column(String(20)); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+class TrainingAssignment(Base):
+    __tablename__="training_assignments"; __table_args__=(UniqueConstraint("employee_id","topic",name="uq_training_assignment"),)
+    id:Mapped[str]=mapped_column(String,primary_key=True,default=uid); employee_id:Mapped[str]=mapped_column(ForeignKey("employees.id",ondelete="CASCADE"),index=True); topic:Mapped[str]=mapped_column(String(80)); priority:Mapped[str]=mapped_column(String(20)); recommendation:Mapped[str]=mapped_column(Text); status:Mapped[str]=mapped_column(String(20),default="assigned",index=True); assigned_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now); completed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
 class AuditEvent(Base):
     __tablename__="audit_events"
     id:Mapped[str]=mapped_column(String,primary_key=True,default=uid); action:Mapped[str]=mapped_column(String(80),index=True); entity_type:Mapped[str]=mapped_column(String(60)); entity_id:Mapped[str|None]=mapped_column(String(64),nullable=True); details:Mapped[dict]=mapped_column(JSON,default=dict); created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)

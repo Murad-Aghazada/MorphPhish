@@ -769,26 +769,101 @@ function Analytics() {
 }
 
 /* ------------------------------------------------------------------ training */
-function Recs() {
-  const [d, e] = useLoad('/recommendations');
+const trainStatusChip = (s) =>
+  s === 'completed' ? <span className="stagechip on low">✓ Completed</span>
+    : s === 'assigned' ? <span className="stagechip on medium">Assigned</span>
+      : <span className="stagechip">Not assigned</span>;
+function TrainingCard({ g, onAssign, onComplete, onRemove }) {
+  return (
+    <div className="card">
+      <div className="row" style={{ alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {g.risk_score != null && <span className="riskpill" style={{ color: riskColor(g.risk_score), borderColor: 'color-mix(in srgb, ' + riskColor(g.risk_score) + ' 40%, transparent)' }} title={g.risk_level}>{Math.round(g.risk_score)}</span>}
+          <div>
+            <NavLink to={`/employees/${g.employee_id}`} style={{ fontWeight: 600 }}>{g.employee}</NavLink>
+            <div className="muted" style={{ fontSize: 12.5 }}>{g.department} · {g.role}</div>
+          </div>
+        </div>
+      </div>
+      <div className="stack" style={{ marginTop: 12 }}>
+        {g.items.map((i) => (
+          <div className="trainrow" key={i.topic}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Badge kind={i.priority}>{i.priority}</Badge><b>{titleCase(i.topic)}</b>{trainStatusChip(i.status)}
+              </div>
+              <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>{i.recommendation}</div>
+            </div>
+            <div className="actions" style={{ flexShrink: 0 }}>
+              {i.status === 'none' && <button onClick={() => onAssign(g.employee_id, i.topic)}>Assign</button>}
+              {i.status === 'assigned' && <button onClick={() => onComplete(i.assignment_id)}>Mark complete</button>}
+              {i.status !== 'none' && <button className="ghost" onClick={() => onRemove(i.assignment_id)}>Remove</button>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function Training() {
+  const [d, e, setD] = useLoad('/training');
+  const toast = useToast();
+  const [q, setQ] = useState('');
+  const [dept, setDept] = useState('all');
+  const [prio, setPrio] = useState('all');
+  const [status, setStatus] = useState('all');
+  const refresh = async () => setD(await api('/training'));
+  const act = async (fn, ok) => { try { await fn(); toast(ok, 'ok'); await refresh(); } catch (x) { toast(x.message, 'err'); } };
+  const onAssign = (employee_id, topic) => act(() => api('/training/assign', { method: 'POST', body: JSON.stringify({ employee_id, topic }) }), 'Training assigned.');
+  const onComplete = (id) => act(() => api(`/training/${id}/complete`, { method: 'POST' }), 'Marked complete.');
+  const onRemove = (id) => act(() => api(`/training/${id}`, { method: 'DELETE' }), 'Assignment removed.');
   if (e) return <Err e={e} />;
   if (!d) return <Load />;
+  const depts = Array.from(new Set(d.map((g) => g.department).filter(Boolean))).sort();
+  const allItems = d.flatMap((g) => g.items);
+  const summary = {
+    needing: d.filter((g) => g.items.some((i) => i.status !== 'completed')).length,
+    high: allItems.filter((i) => i.priority === 'high').length,
+    assigned: allItems.filter((i) => i.status === 'assigned').length,
+    completed: allItems.filter((i) => i.status === 'completed').length,
+  };
+  const groups = d.map((g) => ({ ...g, items: g.items.filter((i) => (prio === 'all' || i.priority === prio) && (status === 'all' || i.status === status)) }))
+    .filter((g) => g.items.length > 0 && (dept === 'all' || g.department === dept) &&
+      (!q || g.employee.toLowerCase().includes(q.toLowerCase()) || g.role.toLowerCase().includes(q.toLowerCase())));
+  const exportCsv = () => {
+    const rows = [['Employee', 'Department', 'Role', 'Risk', 'Topic', 'Priority', 'Recommendation', 'Status']];
+    d.forEach((g) => g.items.forEach((i) => rows.push([g.employee, g.department, g.role, g.risk_score ?? '', i.topic, i.priority, i.recommendation, i.status])));
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = 'morphphish-training.csv'; a.click(); URL.revokeObjectURL(url);
+  };
   return (
     <>
-      <Head eyebrow="Corrective guidance" title="Training recommendations" sub="Derived from how each persona responded to simulations." />
-      {d.length === 0 ? <Empty>No recommendations yet — run a simulation first.</Empty> : (
-        <div className="stack">
-          {d.map((x, i) => (
-            <div className="card row" key={i} style={{ alignItems: 'flex-start' }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{x.employee}</div>
-                <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>{titleCase(x.topic)} — {x.recommendation}</div>
-              </div>
-              <Badge kind={x.priority}>{x.priority}</Badge>
-            </div>
-          ))}
-        </div>
-      )}
+      <Head eyebrow="Corrective guidance" title="Training" sub="Personalized awareness actions, derived from how each persona handled simulations — assign them and track completion." />
+      <section className="grid4">
+        <Metric label="Need training" value={summary.needing} />
+        <Metric label="High priority" value={summary.high} />
+        <Metric label="Assigned" value={summary.assigned} />
+        <Metric label="Completed" value={summary.completed} />
+      </section>
+      <div className="card form" style={{ flexWrap: 'wrap', marginTop: 16 }}>
+        <input style={{ minWidth: 200, flex: 1 }} value={q} onChange={(x) => setQ(x.target.value)} placeholder="Search name or role…" />
+        <select value={dept} onChange={(x) => setDept(x.target.value)} title="Department">
+          <option value="all">All departments</option>{depts.map((x) => <option key={x} value={x}>{x}</option>)}
+        </select>
+        <select value={prio} onChange={(x) => setPrio(x.target.value)} title="Priority">
+          <option value="all">All priorities</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+        </select>
+        <select value={status} onChange={(x) => setStatus(x.target.value)} title="Status">
+          <option value="all">Any status</option><option value="none">Not assigned</option><option value="assigned">Assigned</option><option value="completed">Completed</option>
+        </select>
+        <button className="secondary" onClick={exportCsv}>Export CSV</button>
+      </div>
+      <p className="muted" style={{ fontSize: 13, margin: '2px 2px 8px' }}>{groups.length} of {d.length} personas</p>
+      <div className="stack">
+        {groups.length === 0 ? <Empty>No training items match these filters.</Empty>
+          : groups.map((g) => <TrainingCard key={g.employee_id} g={g} onAssign={onAssign} onComplete={onComplete} onRemove={onRemove} />)}
+      </div>
     </>
   );
 }
@@ -920,7 +995,7 @@ function App() {
             <Route path="/simulations" element={<Simulations />} />
             <Route path="/archive" element={<Archive />} />
             <Route path="/analytics" element={<Analytics />} />
-            <Route path="/recommendations" element={<Recs />} />
+            <Route path="/recommendations" element={<Training />} />
             <Route path="/status" element={<Status />} />
           </Routes>
         </Layout>

@@ -228,15 +228,24 @@ def campaign_analytics(id:str,db:Session=Depends(get_db)): one(db,Campaign,id); 
 def recommendations(db:Session=Depends(get_db)):
     rows=[]
     for e in db.scalars(select(Employee)).all():
-        clicked=db.scalar(select(func.count()).select_from(InteractionEvent).where(InteractionEvent.employee_id==e.id,InteractionEvent.event_type=="link_clicked")) or 0
-        submitted=db.scalar(select(func.count()).select_from(InteractionEvent).where(InteractionEvent.employee_id==e.id,InteractionEvent.event_type=="credential_simulation_submitted")) or 0
-        reported=db.scalar(select(func.count()).select_from(InteractionEvent).where(InteractionEvent.employee_id==e.id,InteractionEvent.event_type=="simulation_reported")) or 0
-        topics=[]
-        if submitted: topics.append(("credential hygiene","high","Use simulation-only values and verify identity prompts before entering credentials."))
-        if clicked: topics.append(("link inspection","medium","Inspect link destinations and validate the sender/context before following links."))
-        if not reported: topics.append(("reporting procedure","medium","Practice using the organization-approved reporting channel for suspicious messages."))
-        if not topics: topics.append(("sender validation","low","Continue validating sender identity and unexpected requests."))
-        rows.extend({"employee_id":e.id,"employee":e.full_name,"topic":a,"priority":b,"recommendation":c} for a,b,c in topics)
+        for tp in derive_topics(db,e):
+            pr,rec=TRAINING_TOPICS[tp]
+            rows.append({"employee_id":e.id,"employee":e.full_name,"topic":tp,"priority":pr,"recommendation":rec})
     return rows
+@router.get('/training')
+def training(db:Session=Depends(get_db)): return training_overview(db)
+@router.post('/training/assign')
+def training_assign(body:TrainingAssignRequest,db:Session=Depends(get_db)):
+    e=one(db,Employee,body.employee_id)
+    try: a=assign_training(db,e,body.topic)
+    except ValueError as ex: raise HTTPException(422,str(ex))
+    db.commit(); return {"id":a.id,"employee_id":a.employee_id,"topic":a.topic,"priority":a.priority,"status":a.status,"assigned_at":a.assigned_at.isoformat()}
+@router.post('/training/{id}/complete')
+def training_complete(id:str,db:Session=Depends(get_db)):
+    a=one(db,TrainingAssignment,id); complete_training(db,a); db.commit()
+    return {"id":a.id,"status":a.status,"completed_at":a.completed_at.isoformat()}
+@router.delete('/training/{id}',status_code=204)
+def training_delete(id:str,db:Session=Depends(get_db)):
+    a=one(db,TrainingAssignment,id); db.delete(a); audit(db,"training_removed","training",id,{"topic":a.topic}); db.commit()
 @router.get('/audit')
 def audit_events(db:Session=Depends(get_db)): return [{"action":x.action,"entity_type":x.entity_type,"entity_id":x.entity_id,"details":x.details,"created_at":x.created_at} for x in db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(100)).all()]

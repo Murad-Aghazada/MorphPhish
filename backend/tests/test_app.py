@@ -16,6 +16,20 @@ def test_end_to_end_and_password_never_persisted(client):
     audit=client.get('/api/v1/audit').text; assert secret not in audit
     a=client.get(f"/api/v1/campaigns/{c['id']}/analytics").json(); assert a['submission_rate']==100.0
 
+def test_training_assign_complete_remove(client):
+    e=client.post('/api/v1/employees',json=employee_payload('train@demo.example.com')).json()
+    grp=next(g for g in client.get('/api/v1/training').json() if g['employee_id']==e['id'])
+    assert grp['items'] and grp['items'][0]['status']=='none'      # derived, not yet assigned
+    topic=grp['items'][0]['topic']
+    a=client.post('/api/v1/training/assign',json={'employee_id':e['id'],'topic':topic}).json(); assert a['status']=='assigned'
+    it=lambda: next(i for i in next(g for g in client.get('/api/v1/training').json() if g['employee_id']==e['id'])['items'] if i['topic']==topic)
+    assert it()['status']=='assigned' and it()['assignment_id']==a['id']
+    assert client.post(f"/api/v1/training/{a['id']}/complete").json()['status']=='completed'
+    assert it()['status']=='completed'
+    assert client.delete(f"/api/v1/training/{a['id']}").status_code==204
+    assert it()['status']=='none'                                  # back to a fresh recommendation
+    assert client.post('/api/v1/training/assign',json={'employee_id':e['id'],'topic':'bogus'}).status_code==422
+
 def test_employee_list_includes_risk(client):
     client.post('/api/v1/employees',json=employee_payload('risklist@demo.example.com'))
     row=next(x for x in client.get('/api/v1/employees').json() if x['email']=='risklist@demo.example.com')

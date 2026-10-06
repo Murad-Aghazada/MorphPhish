@@ -27,7 +27,11 @@ Swagger is available at `/docs`.
 | POST | `/api/v1/simulation/{session_id}/event` | Store safe interaction event (idempotent per session + event_type); password value discarded |
 | GET | `/api/v1/analytics` | Human-risk map: funnel + per-department & per-role engagement + risk distribution |
 | GET | `/api/v1/campaigns/{id}/analytics` | Flat per-campaign metrics (delivery/open/click/submission/reporting + avg response) |
-| GET | `/api/v1/recommendations` | Deterministic awareness recommendations |
+| GET | `/api/v1/recommendations` | Deterministic awareness recommendations (flat, derived) |
+| GET | `/api/v1/training` | Per-persona training view: derived topics + assignment status + risk |
+| POST | `/api/v1/training/assign` | Assign a topic to a persona (idempotent per employee+topic) |
+| POST | `/api/v1/training/{id}/complete` | Mark an assignment completed |
+| DELETE | `/api/v1/training/{id}` | Remove (unassign) a training assignment |
 | GET | `/api/v1/audit` | Recent administrative audit events |
 
 Important errors: 404 unknown IDs/sessions, 409 invalid lifecycle transition or duplicates, 422 invalid/safety-rejected input, 503 unavailable external provider.

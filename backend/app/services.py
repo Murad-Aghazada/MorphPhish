@@ -276,3 +276,58 @@ def risk_map(db):
             "people_targeted":len({t.employee_id for t in targets}),
             "employees_total":len(emps),
             "high_risk_employees":sum(1 for _id,(_sc,lv) in risk.items() if lv in ("high","critical"))}
+
+# ---------------------------------------------------------------- training (Week 4)
+# Corrective-training catalog: topic -> (priority, guidance). Derivation + assignment
+# both read from here so recommendation text stays consistent.
+TRAINING_TOPICS={
+    "credential hygiene":("high","Use simulation-only values and verify identity prompts before entering credentials."),
+    "link inspection":("medium","Inspect link destinations and validate the sender/context before following links."),
+    "reporting procedure":("medium","Practice using the organization-approved reporting channel for suspicious messages."),
+    "sender validation":("low","Continue validating sender identity and unexpected requests."),
+}
+_PRIORITY_RANK={"high":0,"medium":1,"low":2}
+
+def derive_topics(db,employee):
+    """Which corrective topics a persona needs, from how they handled simulations."""
+    def cnt(et): return db.scalar(select(func.count()).select_from(InteractionEvent).where(InteractionEvent.employee_id==employee.id,InteractionEvent.event_type==et)) or 0
+    submitted=cnt("credential_simulation_submitted"); clicked=cnt("link_clicked"); reported=cnt("simulation_reported")
+    topics=[]
+    if submitted: topics.append("credential hygiene")
+    if clicked: topics.append("link inspection")
+    if not reported: topics.append("reporting procedure")
+    if not topics: topics.append("sender validation")
+    return topics
+
+def training_overview(db):
+    """Per-persona training view: derived topics merged with assignment status,
+    employee context and risk, sorted by most urgent topic then risk."""
+    emps=db.scalars(select(Employee)).all()
+    risk={rp.employee_id:(rp.score,rp.level) for rp in db.scalars(select(RiskProfile)).all()}
+    assigns={(a.employee_id,a.topic):a for a in db.scalars(select(TrainingAssignment)).all()}
+    out=[]
+    for e in emps:
+        items=[]
+        for tp in derive_topics(db,e):
+            pr,rec=TRAINING_TOPICS[tp]; a=assigns.get((e.id,tp))
+            items.append({"topic":tp,"priority":pr,"recommendation":rec,
+                          "status":(a.status if a else "none"),"assignment_id":(a.id if a else None),
+                          "assigned_at":(a.assigned_at.isoformat() if a else None),
+                          "completed_at":(a.completed_at.isoformat() if a and a.completed_at else None)})
+        sc,lv=risk.get(e.id,(None,None))
+        out.append({"employee_id":e.id,"employee":e.full_name,"department":e.department,"role":e.role,
+                    "risk_score":sc,"risk_level":lv,"items":items})
+    out.sort(key=lambda r:(min((_PRIORITY_RANK.get(i["priority"],3) for i in r["items"]),default=3),-(r["risk_score"] or 0)))
+    return out
+
+def assign_training(db,employee,topic):
+    if topic not in TRAINING_TOPICS: raise ValueError("Unknown training topic")
+    pr,rec=TRAINING_TOPICS[topic]
+    a=db.scalar(select(TrainingAssignment).where(TrainingAssignment.employee_id==employee.id,TrainingAssignment.topic==topic))
+    if a: a.status="assigned"; a.completed_at=None; a.priority=pr; a.recommendation=rec
+    else: a=TrainingAssignment(employee_id=employee.id,topic=topic,priority=pr,recommendation=rec,status="assigned"); db.add(a)
+    db.flush(); audit(db,"training_assigned","employee",employee.id,{"topic":topic}); return a
+
+def complete_training(db,assignment):
+    assignment.status="completed"; assignment.completed_at=datetime.now(timezone.utc)
+    audit(db,"training_completed","training",assignment.id,{"topic":assignment.topic}); return assignment
