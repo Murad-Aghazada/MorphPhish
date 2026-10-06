@@ -381,7 +381,10 @@ function ScenarioCard({ s, onChange }) {
   const [launch, setLaunch] = useState(null);
   const [auth, setAuth] = useState(false);
   const [cred, setCred] = useState({ u: '', p: '' });
+  const [result, setResult] = useState(null);
   const editable = EDITABLE.has(s.status);
+  const loadResult = async () => { try { setResult(await api(`/scenarios/${s.id}/result`)); } catch { /* ignore */ } };
+  useEffect(() => { if (s.status === 'ACTIVE') loadResult(); }, [s.status, s.id]); // show outcome once launched
   const run = async (fn, ok) => { try { const r = await fn(); if (ok) toast(ok, 'ok'); onChange(); return r; } catch (x) { toast(x.message, 'err'); } };
   const save = () => run(async () => { await api(`/scenarios/${s.id}`, { method: 'PATCH', body: JSON.stringify(f) }); setEdit(false); }, 'Message updated.');
   const act = (path, ok) => run(() => api(`/scenarios/${s.id}/${path}`, { method: 'POST' }), ok);
@@ -453,6 +456,37 @@ function ScenarioCard({ s, onChange }) {
           <a href={launch.simulation_url} target="_blank" rel="noreferrer">Open</a>
         </div>
       )}
+      {s.status === 'ACTIVE' && result && result.targets && result.targets.length > 0 && (
+        <SimResult target={result.targets[0]} onRefresh={loadResult} />
+      )}
+    </div>
+  );
+}
+// Outcome of a launched simulation, shown on the Simulations tab.
+const STAGES = [['opened', 'Opened', 'medium'], ['clicked', 'Clicked', 'high'], ['submitted', 'Submitted', 'critical'], ['reported', 'Reported', 'low']];
+function simHeadline(t) {
+  if (t.reported) return { text: 'Reported — did the right thing', kind: 'low' };
+  if (t.submitted) return { text: 'Entered credentials on the fake page', kind: 'critical' };
+  if (t.clicked) return { text: 'Clicked the link', kind: 'high' };
+  if (t.opened) return { text: 'Opened the email', kind: 'medium' };
+  return { text: 'Delivered — no interaction yet', kind: '' };
+}
+function SimResult({ target, onRefresh }) {
+  const h = simHeadline(target);
+  return (
+    <div className="simresult">
+      <div className="row" style={{ marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className="mono" style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--muted)' }}>Result</span>
+          <Badge kind={h.kind || 'iris'}>{h.text}</Badge>
+        </div>
+        <button className="secondary" onClick={onRefresh}>Refresh</button>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {STAGES.map(([key, label, kind]) => (
+          <span key={key} className={'stagechip' + (target[key] ? ' on ' + kind : '')}>{target[key] ? '✓ ' : ''}{label}</span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -659,6 +693,7 @@ function Sim() {
   useEffect(() => { if (d && !landed.current) { landed.current = true; ev('link_clicked'); } }, [d]);
   const submit = () => { ev('credential_simulation_submitted', pw); setOutcome('submitted'); setPhase('debrief'); };
   const report = () => { ev('simulation_reported'); setOutcome('reported'); setPhase('debrief'); };
+  const restart = () => { viewed.current = false; setPw(''); setOutcome(null); setPhase('login'); };
 
   if (e) return <div className="landing"><Err e={e} /></div>;
   if (!d) return <div className="landing"><Load /></div>;
@@ -681,6 +716,7 @@ function Sim() {
             <ul>{RED_FLAGS.map((f, i) => <li key={i}>{f}</li>)}</ul>
           </div>
           <p className="muted small">This was part of an authorized, non-punitive training exercise using synthetic data. Questions go to your security team.</p>
+          <button className="loginbtn" style={{ marginTop: 18 }} onClick={restart}>Run the simulation again</button>
         </div>
       </div>
     );

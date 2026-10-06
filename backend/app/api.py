@@ -145,7 +145,32 @@ def event(session_id:str,body:EventIn,db:Session=Depends(get_db)):
     if not t: raise HTTPException(404,"Simulation session not found")
     # Deliberately discard body.password. It is never stored, hashed, logged, forwarded, or included in metadata.
     meta={"credential_submitted":True,"credential_stored":False} if body.event_type=="credential_simulation_submitted" else {}
-    ev=InteractionEvent(campaign_id=t.campaign_id,employee_id=t.employee_id,session_id=session_id,event_type=body.event_type,safe_metadata=meta); db.add(ev); db.flush(); audit(db,"simulation_event","campaign",t.campaign_id,{"event_type":body.event_type}); db.commit(); return ev
+    # Idempotent per (session, event_type): a session either reached a stage or not, so
+    # replaying the landing page (demo re-runs) refreshes the event instead of inflating counts.
+    ev=db.scalar(select(InteractionEvent).where(InteractionEvent.session_id==session_id,InteractionEvent.event_type==body.event_type))
+    if ev: ev.occurred_at=datetime.now(timezone.utc); ev.safe_metadata=meta
+    else: ev=InteractionEvent(campaign_id=t.campaign_id,employee_id=t.employee_id,session_id=session_id,event_type=body.event_type,safe_metadata=meta); db.add(ev)
+    db.flush(); audit(db,"simulation_event","campaign",t.campaign_id,{"event_type":body.event_type}); db.commit(); return ev
+STAGE_EVENT={"opened":"email_opened","clicked":"link_clicked","submitted":"credential_simulation_submitted","reported":"simulation_reported"}
+@router.get('/scenarios/{id}/result')
+def scenario_result(id:str,db:Session=Depends(get_db)):
+    """Per-target outcome for a launched scenario: which funnel stages each
+    recipient reached, so the Simulations tab can show the result after it ends."""
+    s=one(db,Scenario,id)
+    camps=db.scalars(select(Campaign).where(Campaign.scenario_id==id)).all()
+    targets=[]
+    for c in camps:
+        for t in db.scalars(select(CampaignTarget).where(CampaignTarget.campaign_id==c.id)).all():
+            evs=db.scalars(select(InteractionEvent).where(InteractionEvent.session_id==t.session_id)).all()
+            types={e.event_type for e in evs}
+            reached=[stage for stage,et in STAGE_EVENT.items() if et in types]
+            emp=db.get(Employee,t.employee_id); last=max((e.occurred_at for e in evs),default=None)
+            targets.append({"session_id":t.session_id,"recipient":emp.email if emp else None,
+                            "delivered":bool(t.delivered_at),"reached":reached,
+                            "opened":"opened" in reached,"clicked":"clicked" in reached,
+                            "submitted":"submitted" in reached,"reported":"reported" in reached,
+                            "last_event_at":last.isoformat() if last else None})
+    return {"scenario_id":id,"status":s.status,"launched":bool(camps),"targets":targets}
 @router.get('/analytics')
 def analytics_all(db:Session=Depends(get_db)):
     return {**analytics(db),**risk_map(db)}

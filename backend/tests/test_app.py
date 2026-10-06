@@ -250,3 +250,20 @@ def test_analytics_risk_map(client):
     # per-campaign analytics still exposes the flat rate keys
     cid=client.get('/api/v1/campaigns').json()[0]['id']
     assert client.get(f'/api/v1/campaigns/{cid}/analytics').json()['click_rate']==100.0
+
+def test_event_idempotent_and_scenario_result(client):
+    # The landing page can be replayed (demo re-runs); events are idempotent per
+    # (session, event_type) and the scenario result reflects the stages reached.
+    e=client.post('/api/v1/employees',json=employee_payload('res@demo.example.com')).json()
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
+    client.post(f"/api/v1/scenarios/{s['id']}/approve")
+    sess=client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).json()['session_id']
+    r=client.get(f"/api/v1/scenarios/{s['id']}/result").json()
+    assert r['launched'] and r['targets'][0]['delivered'] and r['targets'][0]['reached']==[]
+    for _ in range(2):  # replay submit — must not double-count
+        client.post(f'/api/v1/simulation/{sess}/event',json={"session_id":sess,"event_type":"credential_simulation_submitted"})
+    client.post(f'/api/v1/simulation/{sess}/event',json={"session_id":sess,"event_type":"link_clicked"})
+    tgt=client.get(f"/api/v1/scenarios/{s['id']}/result").json()['targets'][0]
+    assert tgt['submitted'] and tgt['clicked'] and set(tgt['reached'])=={'clicked','submitted'}
+    cid=client.get('/api/v1/campaigns').json()[0]['id']
+    assert client.get(f'/api/v1/campaigns/{cid}/analytics').json()['submission_rate']==100.0  # not 200

@@ -19,10 +19,11 @@ Swagger is available at `/docs`.
 | POST | `/api/v1/scenarios/{id}/reject` | Reject scenario |
 | POST | `/api/v1/scenarios/{id}/regenerate` | Regenerate the message **in place** (same scenario id; resets to REVIEW_REQUIRED) |
 | POST | `/api/v1/scenarios/{id}/launch` | **One-click launch** (requires admin HTTP Basic auth): create campaign + target + send; returns `simulation_url` |
+| GET | `/api/v1/scenarios/{id}/result` | Per-target outcome of a launched scenario (which funnel stages each recipient reached) |
 | POST | `/api/v1/campaigns` | Create campaign from approved scenario (name optional; auto-derived) |
 | POST | `/api/v1/campaigns/{id}/launch` | Launch an existing DRAFT campaign (requires admin HTTP Basic auth); returns `simulation_url` |
 | GET | `/api/v1/simulation/{session_id}` | Safe landing context |
-| POST | `/api/v1/simulation/{session_id}/event` | Store safe interaction event; password value discarded |
+| POST | `/api/v1/simulation/{session_id}/event` | Store safe interaction event (idempotent per session + event_type); password value discarded |
 | GET | `/api/v1/analytics` | Human-risk map: funnel + per-department & per-role engagement + risk distribution |
 | GET | `/api/v1/campaigns/{id}/analytics` | Flat per-campaign metrics (delivery/open/click/submission/reporting + avg response) |
 | GET | `/api/v1/recommendations` | Deterministic awareness recommendations |
