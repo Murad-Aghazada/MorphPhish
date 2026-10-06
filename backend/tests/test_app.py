@@ -217,6 +217,15 @@ def test_launch_requires_admin_credentials(client):
     assert client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=bad).status_code==401  # wrong creds
     assert client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).status_code==200  # correct
 
+def test_launch_blocked_for_unauthorized_recipient_domain(client):
+    # The authorized-domain allow-list is a hard launch gate for every provider,
+    # not just the SMTP sender — a persona outside it can never be targeted.
+    e=client.post('/api/v1/employees',json=employee_payload('victim@gmail.com')).json()
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
+    client.post(f"/api/v1/scenarios/{s['id']}/approve")
+    r=client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN)
+    assert r.status_code==409 and 'AUTHORIZED_EMAIL_DOMAINS' in r.json()['detail']
+
 def test_regenerate_updates_in_place(client):
     e=client.post('/api/v1/employees',json=employee_payload('regen@demo.example.com')).json()
     s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()

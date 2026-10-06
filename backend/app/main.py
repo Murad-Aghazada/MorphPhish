@@ -7,6 +7,18 @@ from .core.logging import configure_logging
 from .api import router
 configure_logging(settings.log_level)
 log=logging.getLogger("app")
+
+def _warn_insecure_defaults():
+    # The lab defaults (root/root, change-me) are deliberate for local use; outside
+    # development they are a broken-authentication risk and must be overridden.
+    if settings.app_env.lower()=="development": return
+    weak=[]
+    if settings.admin_password=="root": weak.append("ADMIN_PASSWORD")
+    if settings.admin_username=="root": weak.append("ADMIN_USERNAME")
+    if settings.app_secret_key=="change-me": weak.append("APP_SECRET_KEY")
+    if weak: log.warning("SECURITY: running with APP_ENV=%s but insecure default(s) still set: %s — override these before any non-lab deployment.",settings.app_env,", ".join(weak))
+
+_warn_insecure_defaults()
 app=FastAPI(title=settings.app_name,version="1.0.0",description="Authorized, synthetic-data phishing awareness simulation platform.")
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_list,allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
 app.include_router(router)

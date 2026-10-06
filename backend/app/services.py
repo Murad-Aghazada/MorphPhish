@@ -155,8 +155,19 @@ def score_scenario(db,scenario):
     scenario.quality_score,scenario.quality_notes=assess_quality(data,ctx,lang)
     return scenario.quality_score,scenario.quality_notes
 
+def _assert_authorized_recipient(email):
+    """Hard gate: a simulation may only ever be delivered to an address inside
+    AUTHORIZED_EMAIL_DOMAINS. Enforced here, before any provider dispatch, so the
+    invariant holds for every delivery path (mock email, GoPhish) and not just the
+    SMTP sender. Prevents a mis-synced/edited persona from aiming a lure at a real
+    inbox."""
+    domain=(email or "").rsplit('@',1)[-1].lower()
+    if '@' not in (email or "") or domain not in settings.allowed_domains:
+        raise ValueError("Recipient is outside AUTHORIZED_EMAIL_DOMAINS — refusing to launch")
+
 def launch_campaign(db,campaign,scenario,employee):
     if scenario.status!=ScenarioStatus.APPROVED.value: raise ValueError("Scenario must be approved before campaign launch")
+    _assert_authorized_recipient(employee.email)
     target=CampaignTarget(campaign_id=campaign.id,employee_id=employee.id); db.add(target); db.flush()
     url=simulation_url(target.session_id); lang=normalize_language(scenario.language)
     team=(DEPARTMENT_THEMES.get(employee.department,DEFAULT_THEME))["team"][lang]
