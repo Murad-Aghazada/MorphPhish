@@ -87,7 +87,7 @@ function Glyph() {
 }
 const pages = [
   ['/', 'Dashboard'], ['/employees', 'Employees'], ['/simulations', 'Simulations'],
-  ['/analytics', 'Analytics'], ['/recommendations', 'Training'], ['/status', 'System'],
+  ['/archive', 'Archive'], ['/analytics', 'Analytics'], ['/recommendations', 'Training'], ['/status', 'System'],
 ];
 function ModeChip() {
   const [h] = useLoad('/health');
@@ -528,9 +528,73 @@ function Simulations() {
         <button disabled={!emp || busy} onClick={gen}>{busy ? 'Generating…' : 'Generate message'}</button>
       </div>
       <div className="stack" style={{ marginTop: 4 }}>
-        {scen === null ? <Load /> : scen.length === 0
-          ? <Empty>No simulations yet. Pick a persona above and generate the first message.</Empty>
-          : scen.map((s) => <ScenarioCard key={s.id} s={s} onChange={refresh} />)}
+        {scen === null ? <Load /> : (() => {
+          // Active = still in the pipeline or running but not yet completed.
+          const active = scen.filter((s) => !s.completed && s.status !== 'REJECTED');
+          return active.length === 0
+            ? <Empty>No active simulations. Pick a persona above and generate a message — finished ones move to <b>Archive</b>.</Empty>
+            : active.map((s) => <ScenarioCard key={s.id} s={s} onChange={refresh} />);
+        })()}
+      </div>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ archive */
+// Classify an archived scenario into one outcome bucket (worst reached stage).
+function outcomeBucket(s) {
+  if (s.status === 'REJECTED') return 'rejected';
+  const o = s.outcome || {};
+  if (o.reported) return 'reported';
+  if (o.submitted) return 'submitted';
+  if (o.clicked) return 'clicked';
+  if (o.opened) return 'opened';
+  return 'none';
+}
+const OUTCOME_OPTS = [['all', 'All outcomes'], ['reported', 'Reported'], ['submitted', 'Submitted'], ['clicked', 'Clicked'], ['opened', 'Opened only'], ['none', 'No interaction'], ['rejected', 'Rejected']];
+function Archive() {
+  const [scen, e, setScen] = useLoad('/scenarios');
+  const [q, setQ] = useState('');
+  const [outcome, setOutcome] = useState('all');
+  const [lang, setLang] = useState('all');
+  const [diff, setDiff] = useState('all');
+  const [dept, setDept] = useState('all');
+  const refresh = async () => setScen(await api('/scenarios'));
+  if (e) return <Err e={e} />;
+  if (!scen) return <Load />;
+  const archived = scen.filter((s) => s.completed || s.status === 'REJECTED');
+  const depts = Array.from(new Set(archived.map((s) => s.department).filter(Boolean))).sort();
+  const filtered = archived.filter((s) =>
+    (outcome === 'all' || outcomeBucket(s) === outcome) &&
+    (lang === 'all' || s.language === lang) &&
+    (diff === 'all' || s.difficulty === diff) &&
+    (dept === 'all' || s.department === dept) &&
+    (!q || s.subject.toLowerCase().includes(q.toLowerCase()) || (s.outcome && (s.outcome.recipient || '').toLowerCase().includes(q.toLowerCase())))
+  );
+  return (
+    <>
+      <Head eyebrow="Finished simulations" title="Archive" sub="Completed runs (the recipient submitted or reported) and rejected drafts." />
+      <div className="card form" style={{ flexWrap: 'wrap' }}>
+        <input style={{ minWidth: 200, flex: 1 }} value={q} onChange={(x) => setQ(x.target.value)} placeholder="Search subject or recipient…" />
+        <select value={outcome} onChange={(x) => setOutcome(x.target.value)} title="Outcome">
+          {OUTCOME_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <select value={dept} onChange={(x) => setDept(x.target.value)} title="Department">
+          <option value="all">All departments</option>
+          {depts.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select value={lang} onChange={(x) => setLang(x.target.value)} title="Language">
+          <option value="all">All languages</option><option value="az">AZ</option><option value="en">EN</option><option value="ru">RU</option>
+        </select>
+        <select value={diff} onChange={(x) => setDiff(x.target.value)} title="Difficulty">
+          <option value="all">All levels</option><option value="easy">easy</option><option value="medium">medium</option><option value="hard">hard</option>
+        </select>
+      </div>
+      <p className="muted" style={{ fontSize: 13, margin: '2px 2px 8px' }}>{filtered.length} of {archived.length} archived</p>
+      <div className="stack" style={{ marginTop: 4 }}>
+        {archived.length === 0 ? <Empty>Nothing archived yet. A simulation moves here once the recipient submits or reports, or when a draft is rejected.</Empty>
+          : filtered.length === 0 ? <Empty>No archived simulations match these filters.</Empty>
+            : filtered.map((s) => <ScenarioCard key={s.id} s={s} onChange={refresh} />)}
       </div>
     </>
   );
@@ -763,6 +827,7 @@ function App() {
             <Route path="/employees" element={<Employees />} />
             <Route path="/employees/:id" element={<Employee />} />
             <Route path="/simulations" element={<Simulations />} />
+            <Route path="/archive" element={<Archive />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/recommendations" element={<Recs />} />
             <Route path="/status" element={<Status />} />

@@ -16,7 +16,7 @@ class ContextOut(ORM): id:str; employee_id:str; kind:str; title:str; summary:str
 class ProfileOut(BaseModel): employee:EmployeeOut; risk:RiskOut; context:list[ContextOut]
 class ScenarioRequest(BaseModel): employee_id:str; objective:str="Improve phishing awareness"; difficulty:str=Field("medium",pattern="^(easy|medium|hard)$"); language:str|None=None
 class ScenarioOut(ORM):
-    id:str; employee_id:str; status:str; language:str; objective:str; difficulty:str; subject:str; email_body:str; pretext:str; landing_page_message:str; training_objective:str; risk_indicators:list; safety_notes:list; quality_score:float|None=None; quality_notes:list=[]; created_at:datetime; approved_at:datetime|None
+    id:str; employee_id:str; status:str; language:str; objective:str; difficulty:str; subject:str; email_body:str; pretext:str; landing_page_message:str; training_objective:str; risk_indicators:list; safety_notes:list; quality_score:float|None=None; quality_notes:list=[]; created_at:datetime; approved_at:datetime|None; department:str|None=None; completed:bool=False; outcome:dict|None=None
 class ScenarioUpdate(BaseModel):
     subject:str|None=Field(None,min_length=1,max_length=255); email_body:str|None=Field(None,min_length=1); pretext:str|None=Field(None,min_length=1); landing_page_message:str|None=Field(None,min_length=1); training_objective:str|None=None; objective:str|None=Field(None,max_length=160); difficulty:str|None=Field(None,pattern="^(easy|medium|hard)$"); risk_indicators:list|None=None
 class ScenarioLaunchRequest(BaseModel): name:str|None=Field(None,max_length=180)

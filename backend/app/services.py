@@ -200,6 +200,34 @@ def analytics(db,campaign_id=None):
     campaigns=db.scalars(cq).all(); events=db.scalars(eq).all(); targets=db.scalars(tq).all()
     return {"campaigns":len(campaigns),**_rates_block(targets,events),"funnel":_funnel(targets,events)}
 
+_STAGE_EVENT={"opened":"email_opened","clicked":"link_clicked","submitted":"credential_simulation_submitted","reported":"simulation_reported"}
+def scenario_outcomes(db):
+    """Per-scenario launch outcome, computed in a few bulk queries (no N+1), so the
+    scenario list can be split into active vs archived and filtered. A scenario is
+    `completed` once any of its targets submitted or reported (the link is retired)."""
+    emps={e.id:e for e in db.scalars(select(Employee)).all()}
+    camps_by_scen={}
+    for c in db.scalars(select(Campaign)).all(): camps_by_scen.setdefault(c.scenario_id,[]).append(c.id)
+    targets_by_camp={}
+    for t in db.scalars(select(CampaignTarget)).all(): targets_by_camp.setdefault(t.campaign_id,[]).append(t)
+    types_by_session={}
+    for ev in db.scalars(select(InteractionEvent)).all(): types_by_session.setdefault(ev.session_id,set()).add(ev.event_type)
+    out={}
+    for scen_id,cids in camps_by_scen.items():
+        tgts=[t for cid in cids for t in targets_by_camp.get(cid,[])]
+        reached=set(); recipient=None; dept=None
+        for t in tgts:
+            seen=types_by_session.get(t.session_id,set())
+            reached|={stage for stage,et in _STAGE_EVENT.items() if et in seen}
+            e=emps.get(t.employee_id)
+            if e: recipient=e.email; dept=e.department
+        out[scen_id]={"launched":bool(tgts),"recipient":recipient,"department":dept,
+                      "opened":"opened" in reached,"clicked":"clicked" in reached,
+                      "submitted":"submitted" in reached,"reported":"reported" in reached,
+                      "reached":[s for s in _STAGE_EVENT if s in reached],
+                      "completed":("submitted" in reached) or ("reported" in reached)}
+    return out
+
 def risk_map(db):
     """Human-risk map: every engagement metric aggregated by department and by
     role, plus the organization's risk-level distribution. This is the Week 4

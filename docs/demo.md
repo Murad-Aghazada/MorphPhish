@@ -11,7 +11,8 @@
 9. Click the button to open the landing at `http://localhost:3000/simulate/<session-id>` — a **realistic corporate sign-in page** with no upfront warning (following the link is itself recorded as the click).
 10. Enter a fake value (e.g. `DEMO-ONLY`) and click **Sign in**. The page immediately reveals the **debrief**: it discloses the authorized simulation, confirms nothing typed was stored, and lists the red flags to watch for. (Or click **Report this message as phishing** to see the "you did the right thing" debrief.)
 11. Explain that the backend discards the submitted field immediately and stores only the boolean interaction event.
-12. Return to Analytics and show the role + department human-risk map: funnel, per-dimension engagement bars, risk distribution, and the accessible metric tables.
+12. Open **Archive** to show finished runs (recipient submitted/reported, or a rejected draft) with filters by outcome, department, language, and difficulty — active runs stay under **Simulations**.
+13. Return to Analytics and show the role + department human-risk map: funnel, per-dimension engagement bars, risk distribution, and the accessible metric tables.
 13. Open Training Recommendations and show deterministic corrective guidance.
 14. Open System to show mock/real provider selection.
 15. Open Swagger at `http://localhost:8000/docs`.

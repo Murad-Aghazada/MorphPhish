@@ -63,7 +63,16 @@ def profile(id:str,db:Session=Depends(get_db)):
     e=one(db,Employee,id); rp=recalc_risk(db,e); items=ensure_context(db,e); db.commit()
     return ProfileOut(employee=e,risk=rp,context=items)
 @router.get('/scenarios',response_model=list[ScenarioOut])
-def scenarios(db:Session=Depends(get_db)): return db.scalars(select(Scenario).order_by(Scenario.created_at.desc())).all()
+def scenarios(db:Session=Depends(get_db)):
+    rows=db.scalars(select(Scenario).order_by(Scenario.created_at.desc())).all()
+    oc=scenario_outcomes(db); emp_dept={e.id:e.department for e in db.scalars(select(Employee)).all()}
+    items=[]
+    for s in rows:
+        item=ScenarioOut.model_validate(s); item.department=emp_dept.get(s.employee_id)
+        o=oc.get(s.id)
+        if o: item.completed=o["completed"]; item.outcome=o
+        items.append(item)
+    return items
 @router.post('/scenarios/generate',response_model=ScenarioOut,status_code=201)
 def gen(body:ScenarioRequest,db:Session=Depends(get_db)):
     try: s=generate_scenario(db,one(db,Employee,body.employee_id),body.objective,body.difficulty,body.language); db.commit(); return s

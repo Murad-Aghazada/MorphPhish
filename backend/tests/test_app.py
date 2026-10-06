@@ -284,3 +284,7 @@ def test_open_pixel_and_link_retired_after_completion(client):
     client.post(f'/api/v1/simulation/{sess}/event',json={"session_id":sess,"event_type":"simulation_reported"})
     # completed -> the link is retired (410) and no longer serves the lure
     assert client.get(f'/api/v1/simulation/{sess}').status_code==410
+    # the scenario list is enriched for the Simulations/Archive split
+    row=next(x for x in client.get('/api/v1/scenarios').json() if x['id']==s['id'])
+    assert row['completed'] is True and row['department']==e['department']
+    assert row['outcome']['reported'] is True and 'reported' in row['outcome']['reached']
