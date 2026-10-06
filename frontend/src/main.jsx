@@ -59,6 +59,12 @@ const daysSince = (iso) => { if (!iso) return null; return Math.floor((Date.now(
 const simTime = (s) => Date.parse((s.outcome && s.outcome.launched_at) || s.created_at) || 0;
 const sortByTime = (list, dir) => [...list].sort((a, b) => dir === 'asc' ? simTime(a) - simTime(b) : simTime(b) - simTime(a));
 const SortToggle = ({ dir, onToggle }) => <button className="secondary" onClick={onToggle} title="Sort by date">{dir === 'desc' ? 'Newest first ↓' : 'Oldest first ↑'}</button>;
+const ARCHIVED_STATUSES = new Set(['COMPLETED', 'CLOSED', 'REJECTED']);
+// A terminal response completes a run; legacy rows may still read ACTIVE, so treat
+// a completed ACTIVE scenario as COMPLETED for the badge and the tab split.
+const effStatus = (s) => (s.completed && s.status === 'ACTIVE') ? 'COMPLETED' : s.status;
+const isArchived = (s) => s.completed || ARCHIVED_STATUSES.has(s.status);
+const isLaunched = (s) => ['ACTIVE', 'COMPLETED', 'CLOSED'].includes(s.status);
 
 const Load = () => <div className="stack"><div className="skeleton" /><div className="skeleton" /></div>;
 const Err = ({ e }) => <div className="error"><b>Something went wrong.</b> {e}</div>;
@@ -390,7 +396,7 @@ function ScenarioCard({ s, onChange }) {
   const [result, setResult] = useState(null);
   const editable = EDITABLE.has(s.status);
   const loadResult = async () => { try { setResult(await api(`/scenarios/${s.id}/result`)); } catch { /* ignore */ } };
-  useEffect(() => { if (s.status === 'ACTIVE') loadResult(); }, [s.status, s.id]); // show outcome once launched
+  useEffect(() => { if (isLaunched(s)) loadResult(); }, [s.status, s.id]); // show outcome once launched
   const run = async (fn, ok) => { try { const r = await fn(); if (ok) toast(ok, 'ok'); onChange(); return r; } catch (x) { toast(x.message, 'err'); } };
   const save = () => run(async () => { await api(`/scenarios/${s.id}`, { method: 'PATCH', body: JSON.stringify(f) }); setEdit(false); }, 'Message updated.');
   const act = (path, ok) => run(() => api(`/scenarios/${s.id}/${path}`, { method: 'POST' }), ok);
@@ -411,7 +417,7 @@ function ScenarioCard({ s, onChange }) {
       <div className="row"><h3 style={{ margin: 0, maxWidth: '70%' }}>{s.subject}</h3>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {s.quality_score != null && <Badge kind={s.quality_score >= 80 ? 'low' : s.quality_score >= 50 ? 'medium' : 'high'} title="Automated quality score">Q {Math.round(s.quality_score)}</Badge>}
-          <Badge kind={'status-' + s.status.toLowerCase()}>{s.status.replace('_', ' ')}</Badge>
+          <Badge kind={'status-' + effStatus(s).toLowerCase()}>{effStatus(s).replace('_', ' ')}</Badge>
         </div>
       </div>
       <div className="cardmeta">
@@ -472,7 +478,7 @@ function ScenarioCard({ s, onChange }) {
           <a href={launch.simulation_url} target="_blank" rel="noreferrer">Open</a>
         </div>
       )}
-      {s.status === 'ACTIVE' && result && result.targets && result.targets.length > 0 && (
+      {isLaunched(s) && result && result.targets && result.targets.length > 0 && (
         <SimResult target={result.targets[0]} onRefresh={loadResult} />
       )}
     </div>
@@ -546,7 +552,7 @@ function Simulations() {
       </div>
       {scen === null ? <Load /> : (() => {
         // Active = still in the pipeline, or launched but not completed/closed.
-        const active = sortByTime(scen.filter((s) => !s.completed && !['REJECTED', 'CLOSED'].includes(s.status)), sort);
+        const active = sortByTime(scen.filter((s) => !isArchived(s)), sort);
         if (active.length === 0) return <div className="stack" style={{ marginTop: 4 }}><Empty>No active simulations. Pick a persona above and generate a message — finished ones move to <b>Archive</b>.</Empty></div>;
         return (
           <>
@@ -588,7 +594,7 @@ function Archive() {
   if (e) return <Err e={e} />;
   if (!scen) return <Load />;
   // Archived = completed (submitted/reported), closed as no-response, or rejected.
-  const archived = scen.filter((s) => s.completed || ['REJECTED', 'CLOSED'].includes(s.status));
+  const archived = scen.filter(isArchived);
   const depts = Array.from(new Set(archived.map((s) => s.department).filter(Boolean))).sort();
   const filtered = sortByTime(archived.filter((s) =>
     (outcome === 'all' || outcomeBucket(s) === outcome) &&

@@ -55,7 +55,9 @@ def seed():
             }
             data = render_scenario(payload)
             q_score, q_notes = assess_quality(data, payload["context"], normalize_language(e.preferred_language))
-            s = Scenario(employee_id=e.id, status=ScenarioStatus.ACTIVE.value, language=e.preferred_language,
+            _terminal = any(et in ("credential_simulation_submitted", "simulation_reported") for et, _ in events)
+            _status = ScenarioStatus.COMPLETED.value if _terminal else ScenarioStatus.ACTIVE.value
+            s = Scenario(employee_id=e.id, status=_status, language=e.preferred_language,
                          objective=payload["objective"], difficulty=difficulty,
                          subject=data["subject"], email_body=data["email_body"], pretext=data["pretext"],
                          landing_page_message=data["landing_page_message"], training_objective=data["training_objective"],

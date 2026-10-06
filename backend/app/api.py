@@ -185,6 +185,11 @@ def event(session_id:str,body:EventIn,db:Session=Depends(get_db)):
     meta={"credential_submitted":True,"credential_stored":False} if body.event_type=="credential_simulation_submitted" else {}
     ev=_record_event(db,t,body.event_type,meta)
     if body.event_type=="link_clicked": _record_event(db,t,"email_opened")  # reaching the page implies the email was opened
+    # A terminal response completes the run: move the scenario to COMPLETED so its
+    # status is correct everywhere (badge + Simulations/Archive split).
+    if body.event_type in TERMINAL_EVENTS:
+        sc=db.get(Scenario,db.get(Campaign,t.campaign_id).scenario_id)
+        if sc and sc.status==ScenarioStatus.ACTIVE.value: sc.status=ScenarioStatus.COMPLETED.value
     db.flush(); audit(db,"simulation_event","campaign",t.campaign_id,{"event_type":body.event_type}); db.commit(); return ev
 STAGE_EVENT={"opened":"email_opened","clicked":"link_clicked","submitted":"credential_simulation_submitted","reported":"simulation_reported"}
 @router.get('/scenarios/{id}/result')

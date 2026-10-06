@@ -163,7 +163,8 @@ main { padding: 40px clamp(20px, 4vw, 52px); max-width: 1240px; width: 100%; }
 .badge.high, .badge.status-rejected { color: var(--risk-high); border-color: color-mix(in srgb, var(--risk-high) 40%, transparent); background: color-mix(in srgb, var(--risk-high) 12%, transparent); }
 .badge.critical { color: var(--risk-critical); border-color: color-mix(in srgb, var(--risk-critical) 40%, transparent); background: color-mix(in srgb, var(--risk-critical) 12%, transparent); }
 .badge.status-approved { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.badge.status-completed { color: var(--muted); }
+.badge.status-completed { color: var(--ink-2); border-color: var(--border-strong); background: var(--surface-2); }
+.badge.status-closed { color: var(--muted); border-color: var(--border-strong); background: var(--surface-2); }
 
 /* ---------- risk factor bars ---------- */
 .factor { display: grid; grid-template-columns: 190px 1fr 42px; align-items: center; gap: 12px; padding: 7px 0; }

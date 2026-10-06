@@ -266,6 +266,8 @@ def test_event_idempotent_and_scenario_result(client):
     tgt=client.get(f"/api/v1/scenarios/{s['id']}/result").json()['targets'][0]
     assert tgt['submitted'] and tgt['clicked'] and tgt['opened']   # click implies opened
     assert set(tgt['reached'])=={'opened','clicked','submitted'}
+    # a terminal response moves the scenario out of ACTIVE into COMPLETED
+    assert next(x for x in client.get('/api/v1/scenarios').json() if x['id']==s['id'])['status']=='COMPLETED'
     cid=client.get('/api/v1/campaigns').json()[0]['id']
     assert client.get(f'/api/v1/campaigns/{cid}/analytics').json()['submission_rate']==100.0  # not 200
 
