@@ -22,7 +22,8 @@ Swagger is available at `/docs`.
 | GET | `/api/v1/scenarios/{id}/result` | Per-target outcome of a launched scenario (which funnel stages each recipient reached) |
 | POST | `/api/v1/campaigns` | Create campaign from approved scenario (name optional; auto-derived) |
 | POST | `/api/v1/campaigns/{id}/launch` | Launch an existing DRAFT campaign (requires admin HTTP Basic auth); returns `simulation_url` |
-| GET | `/api/v1/simulation/{session_id}` | Safe landing context |
+| GET | `/api/v1/simulation/{session_id}` | Safe landing context (410 once the session is completed — the link is retired) |
+| GET | `/api/v1/simulation/{session_id}/pixel.gif` | Email-open tracking pixel: records `email_opened`, returns a 1x1 GIF |
 | POST | `/api/v1/simulation/{session_id}/event` | Store safe interaction event (idempotent per session + event_type); password value discarded |
 | GET | `/api/v1/analytics` | Human-risk map: funnel + per-department & per-role engagement + risk distribution |
 | GET | `/api/v1/campaigns/{id}/analytics` | Flat per-campaign metrics (delivery/open/click/submission/reporting + avg response) |
@@ -59,7 +60,15 @@ inbox (the local stand-in for Mailtrap) at `http://localhost:8025`, which render
 full; recipients are constrained to `AUTHORIZED_EMAIL_DOMAINS`. `EMAIL_PROVIDER=mock` (the test
 default) records nothing externally.
 
+The HTML email embeds a 1x1 **tracking pixel** (`…/pixel.gif`) so viewing the message records
+`email_opened` — the funnel's *Opened* stage — when the mail client loads remote images.
+(Mailpit may need "load remote content" enabled.) Following the link records *Clicked* and, since
+reaching the page implies the email was opened, also backfills *Opened*, so the funnel stays
+monotonic.
+
 The landing page (`/simulate/{session_id}`) is a realistic sign-in page with no upfront
 disclosure — following the link records the click, and the teachable-moment debrief (safety
 disclosure + red flags) appears only after the person submits or reports. The submitted value
-is discarded as always.
+is discarded as always. Submitting or reporting **completes** the session: the backend then
+retires the link (`GET /simulation/{session_id}` returns **410**), so the same URL cannot be
+reused — the landing shows a neutral "this link is no longer active" page.

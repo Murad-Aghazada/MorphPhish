@@ -252,8 +252,8 @@ def test_analytics_risk_map(client):
     assert client.get(f'/api/v1/campaigns/{cid}/analytics').json()['click_rate']==100.0
 
 def test_event_idempotent_and_scenario_result(client):
-    # The landing page can be replayed (demo re-runs); events are idempotent per
-    # (session, event_type) and the scenario result reflects the stages reached.
+    # Events are idempotent per (session, event_type); the scenario result reflects
+    # the stages reached; a click implies the email was opened.
     e=client.post('/api/v1/employees',json=employee_payload('res@demo.example.com')).json()
     s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
     client.post(f"/api/v1/scenarios/{s['id']}/approve")
@@ -264,6 +264,23 @@ def test_event_idempotent_and_scenario_result(client):
         client.post(f'/api/v1/simulation/{sess}/event',json={"session_id":sess,"event_type":"credential_simulation_submitted"})
     client.post(f'/api/v1/simulation/{sess}/event',json={"session_id":sess,"event_type":"link_clicked"})
     tgt=client.get(f"/api/v1/scenarios/{s['id']}/result").json()['targets'][0]
-    assert tgt['submitted'] and tgt['clicked'] and set(tgt['reached'])=={'clicked','submitted'}
+    assert tgt['submitted'] and tgt['clicked'] and tgt['opened']   # click implies opened
+    assert set(tgt['reached'])=={'opened','clicked','submitted'}
     cid=client.get('/api/v1/campaigns').json()[0]['id']
     assert client.get(f'/api/v1/campaigns/{cid}/analytics').json()['submission_rate']==100.0  # not 200
+
+def test_open_pixel_and_link_retired_after_completion(client):
+    e=client.post('/api/v1/employees',json=employee_payload('pixel@demo.example.com')).json()
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
+    client.post(f"/api/v1/scenarios/{s['id']}/approve")
+    sess=client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).json()['session_id']
+    # the tracking pixel returns a GIF and records email_opened (open, not click)
+    px=client.get(f'/api/v1/simulation/{sess}/pixel.gif')
+    assert px.status_code==200 and px.headers['content-type']=='image/gif'
+    tgt=client.get(f"/api/v1/scenarios/{s['id']}/result").json()['targets'][0]
+    assert tgt['opened'] and not tgt['clicked']
+    # the landing is live until a terminal action completes it
+    assert client.get(f'/api/v1/simulation/{sess}').status_code==200
+    client.post(f'/api/v1/simulation/{sess}/event',json={"session_id":sess,"event_type":"simulation_reported"})
+    # completed -> the link is retired (410) and no longer serves the lure
+    assert client.get(f'/api/v1/simulation/{sess}').status_code==410

@@ -693,9 +693,18 @@ function Sim() {
   useEffect(() => { if (d && !landed.current) { landed.current = true; ev('link_clicked'); } }, [d]);
   const submit = () => { ev('credential_simulation_submitted', pw); setOutcome('submitted'); setPhase('debrief'); };
   const report = () => { ev('simulation_reported'); setOutcome('reported'); setPhase('debrief'); };
-  const restart = () => { viewed.current = false; setPw(''); setOutcome(null); setPhase('login'); };
 
-  if (e) return <div className="landing"><Err e={e} /></div>;
+  // Once completed (submitted/reported), the backend retires the link (410) — and
+  // a 404 means the session never existed. Either way, show a neutral ended card.
+  if (e) return (
+    <div className="loginwrap">
+      <div className="logincard" style={{ textAlign: 'center' }}>
+        <div className="loginbrand" style={{ color: 'var(--muted)' }}>MorphPhish</div>
+        <h2>This link is no longer active</h2>
+        <p className="muted">This authorized security-awareness simulation has already been completed, or the link is not valid. If you have questions, contact your security team.</p>
+      </div>
+    </div>
+  );
   if (!d) return <div className="landing"><Load /></div>;
   const recipientEmail = (d.recipient.match(/<(.+)>/) || [])[1] || d.recipient;
   const brand = (d.sender || '').split(' <')[0] || 'Account Services';
@@ -715,8 +724,7 @@ function Sim() {
             <div className="flags-title">What to watch for next time</div>
             <ul>{RED_FLAGS.map((f, i) => <li key={i}>{f}</li>)}</ul>
           </div>
-          <p className="muted small">This was part of an authorized, non-punitive training exercise using synthetic data. Questions go to your security team.</p>
-          <button className="loginbtn" style={{ marginTop: 18 }} onClick={restart}>Run the simulation again</button>
+          <p className="muted small">This was part of an authorized, non-punitive training exercise using synthetic data. Questions go to your security team. This link is now closed.</p>
         </div>
       </div>
     );

@@ -37,12 +37,15 @@ class SMTPProvider(EmailProvider):
         return {"accepted": True, "mode": "smtp"}
 
 
-def build_email_html(team, subject, body_text, cta_url, cta_label):
+def build_email_html(team, subject, body_text, cta_url, cta_label, pixel_url=None):
     """Render a realistic, self-contained HTML simulation email with a branded
     header and a styled call-to-action button. Inline styles only, so it renders
     the same in Mailpit and any mail client. All content is synthetic; the link
-    points at the isolated lab landing page, never a real site."""
+    points at the isolated lab landing page, never a real site. An optional 1x1
+    tracking pixel records email-open when the client loads remote images."""
     esc = html.escape
+    pixel = (f'<img src="{esc(pixel_url)}" width="1" height="1" alt="" '
+             f'style="display:block;width:1px;height:1px;border:0;">') if pixel_url else ""
     paragraphs = "".join(
         f'<p style="margin:0 0 16px;line-height:1.6;color:#2b2f36;font-size:15px;">{esc(p)}</p>'
         for p in (body_text or "").split("\n") if p.strip()
@@ -72,6 +75,7 @@ def build_email_html(team, subject, body_text, cta_url, cta_label):
     <p style="margin:0;font-size:11px;color:#9aa0ab;line-height:1.5;">This message was sent to you by {esc(team)}. Please do not share your account details with anyone.</p>
   </td></tr>
 </table>
+{pixel}
 </td></tr></table>
 </body></html>"""
 

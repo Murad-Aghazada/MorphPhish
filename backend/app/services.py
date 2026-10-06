@@ -149,7 +149,8 @@ def launch_campaign(db,campaign,scenario,employee):
     team=(DEPARTMENT_THEMES.get(employee.department,DEFAULT_THEME))["team"][lang]
     cta={"az":"Hesaba daxil ol","ru":"Войти в аккаунт"}.get(lang,"Sign in to continue")
     text=f"{scenario.email_body}\n\n{cta}: {url}"
-    html_body=build_email_html(team,scenario.subject,scenario.email_body,url,cta)
+    pixel=settings.backend_url.rstrip('/')+f"/api/v1/simulation/{target.session_id}/pixel.gif"
+    html_body=build_email_html(team,scenario.subject,scenario.email_body,url,cta,pixel_url=pixel)
     result=get_campaign_provider().create_campaign(campaign,scenario,target)
     get_email_provider().send(employee.email,scenario.subject,text,html_body=html_body,from_name=team)
     campaign.status=CampaignStatus.ACTIVE.value; campaign.started_at=datetime.now(timezone.utc); campaign.provider_campaign_id=str(result.get("id","")); target.delivered_at=datetime.now(timezone.utc); scenario.status=ScenarioStatus.ACTIVE.value; audit(db,"campaign_started","campaign",campaign.id,{"provider":campaign.provider}); return target

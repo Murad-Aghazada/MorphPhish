@@ -1,6 +1,6 @@
 import secrets
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Form, Request
+from fastapi import APIRouter, Depends, HTTPException, Form, Request, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
@@ -132,10 +132,31 @@ def _sender(dept):
     team=SENDER_TEAM.get(dept,"IT Service Desk")
     slug=team.lower().replace(" & ","-").replace(" ","-")
     return f"{team} <{slug}@corp-portal.example>"  # lookalike, reserved .example domain — never a real sender
+TERMINAL_EVENTS={"credential_simulation_submitted","simulation_reported"}
+_PIXEL=b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'
+def _session_completed(db,session_id):
+    return db.scalar(select(InteractionEvent).where(InteractionEvent.session_id==session_id,InteractionEvent.event_type.in_(TERMINAL_EVENTS))) is not None
+def _record_event(db,t,etype,meta=None):
+    """Upsert one interaction event per (session, event_type) — idempotent so the
+    stage is recorded once no matter how often the landing page fires it."""
+    ev=db.scalar(select(InteractionEvent).where(InteractionEvent.session_id==t.session_id,InteractionEvent.event_type==etype))
+    if ev: ev.occurred_at=datetime.now(timezone.utc); ev.safe_metadata=meta or {}
+    else: ev=InteractionEvent(campaign_id=t.campaign_id,employee_id=t.employee_id,session_id=t.session_id,event_type=etype,safe_metadata=meta or {}); db.add(ev)
+    return ev
+@router.get('/simulation/{session_id}/pixel.gif')
+def open_pixel(session_id:str,db:Session=Depends(get_db)):
+    # Email-open tracking pixel: viewing the message records email_opened. Always
+    # returns the 1x1 GIF so the mail client never shows a broken image.
+    t=db.scalar(select(CampaignTarget).where(CampaignTarget.session_id==session_id))
+    if t: _record_event(db,t,"email_opened"); db.commit()
+    return Response(content=_PIXEL,media_type="image/gif",headers={"Cache-Control":"no-store, no-cache, must-revalidate"})
 @router.get('/simulation/{session_id}',response_model=SimulationOut)
 def simulation(session_id:str,db:Session=Depends(get_db)):
     t=db.scalar(select(CampaignTarget).where(CampaignTarget.session_id==session_id))
     if not t: raise HTTPException(404,"Simulation session not found")
+    # One-shot: once the recipient has submitted or reported, the simulation is complete
+    # and the link is retired — reopening it no longer serves the lure.
+    if _session_completed(db,session_id): raise HTTPException(410,"This simulation has ended")
     c=one(db,Campaign,t.campaign_id); s=one(db,Scenario,c.scenario_id); e=one(db,Employee,s.employee_id)
     return SimulationOut(session_id=session_id,campaign_id=c.id,sender=_sender(e.department),recipient=f"{e.full_name} <{e.email}>",subject=s.subject,email_body=s.email_body,pretext=s.pretext,landing_page_message=s.landing_page_message,notice="AUTHORIZED SIMULATION — never enter a real password.")
 @router.post('/simulation/{session_id}/event',response_model=EventOut,status_code=201)
@@ -145,11 +166,8 @@ def event(session_id:str,body:EventIn,db:Session=Depends(get_db)):
     if not t: raise HTTPException(404,"Simulation session not found")
     # Deliberately discard body.password. It is never stored, hashed, logged, forwarded, or included in metadata.
     meta={"credential_submitted":True,"credential_stored":False} if body.event_type=="credential_simulation_submitted" else {}
-    # Idempotent per (session, event_type): a session either reached a stage or not, so
-    # replaying the landing page (demo re-runs) refreshes the event instead of inflating counts.
-    ev=db.scalar(select(InteractionEvent).where(InteractionEvent.session_id==session_id,InteractionEvent.event_type==body.event_type))
-    if ev: ev.occurred_at=datetime.now(timezone.utc); ev.safe_metadata=meta
-    else: ev=InteractionEvent(campaign_id=t.campaign_id,employee_id=t.employee_id,session_id=session_id,event_type=body.event_type,safe_metadata=meta); db.add(ev)
+    ev=_record_event(db,t,body.event_type,meta)
+    if body.event_type=="link_clicked": _record_event(db,t,"email_opened")  # reaching the page implies the email was opened
     db.flush(); audit(db,"simulation_event","campaign",t.campaign_id,{"event_type":body.event_type}); db.commit(); return ev
 STAGE_EVENT={"opened":"email_opened","clicked":"link_clicked","submitted":"credential_simulation_submitted","reported":"simulation_reported"}
 @router.get('/scenarios/{id}/result')
