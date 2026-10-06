@@ -157,41 +157,57 @@ def launch_campaign(db,campaign,scenario,employee):
 
 # ---------------------------------------------------------------- analytics (Week 4)
 # The engagement funnel stage -> the interaction event that marks it reached.
+# Compromise funnel (monotonic). "Reported" is a positive outcome, not a funnel
+# depth, so it is surfaced separately as a KPI / engagement bar, not here.
 FUNNEL_STAGES=[("delivered",None),("opened","email_opened"),("clicked","link_clicked"),
-               ("submitted","credential_simulation_submitted"),("reported","simulation_reported")]
+               ("submitted","credential_simulation_submitted")]
 RISK_LEVELS=["critical","high","medium","low"]
 
-def _event_counts(events):
-    c={}
-    for e in events: c[e.event_type]=c.get(e.event_type,0)+1
-    return c
+def _stage_sessions(targets,events):
+    """Map each delivered session to the set of stages it reached, so every rate
+    counts a session at most ONCE per stage. This makes rates a true share of
+    delivered sessions (never >100%), robust to duplicate/historical events."""
+    delivered={t.session_id for t in targets if t.delivered_at}
+    raw={}  # event_type -> set(session_id), restricted to delivered sessions
+    first_hit={}  # session_id -> earliest click/report time (reaction time)
+    by_session={t.session_id:t for t in targets}
+    for e in events:
+        if e.session_id not in delivered: continue
+        raw.setdefault(e.event_type,set()).add(e.session_id)
+        if e.event_type in {"link_clicked","simulation_reported"}:
+            cur=first_hit.get(e.session_id)
+            if cur is None or e.occurred_at<cur: first_hit[e.session_id]=e.occurred_at
+    # Funnel implication: reaching a deeper stage means the shallower ones were passed
+    # (submit/report happen on the landing page, i.e. after a click; a click implies an open).
+    submitted=raw.get("credential_simulation_submitted",set()); reported=raw.get("simulation_reported",set())
+    clicked=raw.get("link_clicked",set())|submitted|reported
+    opened=raw.get("email_opened",set())|clicked
+    stages={"email_opened":opened,"link_clicked":clicked,
+            "credential_simulation_submitted":submitted,"simulation_reported":reported}
+    return delivered,stages,first_hit,by_session
 
 def _rates_block(targets,events):
-    """Delivery/open/click/submission/reporting rates (% of delivered) plus the
-    average reaction time (seconds from delivery to click/report) for one slice
-    of targets and their events. Shared by the global view and every dimension."""
-    delivered=sum(1 for t in targets if t.delivered_at)
-    c=_event_counts(events); pct=lambda n,d: round(100*n/d,1) if d else 0.0
-    by_session={t.session_id:t for t in targets}; rts=[]
-    for e in events:
-        t=by_session.get(e.session_id)
-        if t and t.delivered_at and e.event_type in {"link_clicked","simulation_reported"}:
-            rts.append((e.occurred_at-t.delivered_at).total_seconds())
-    return {"targets":len(targets),"delivered":delivered,
-            "delivery_rate":pct(delivered,len(targets)),
-            "open_rate":pct(c.get("email_opened",0),delivered),
-            "click_rate":pct(c.get("link_clicked",0),delivered),
-            "submission_rate":pct(c.get("credential_simulation_submitted",0),delivered),
-            "reporting_rate":pct(c.get("simulation_reported",0),delivered),
+    """Delivery/open/click/submission/reporting rates (% of delivered sessions)
+    plus the average reaction time (seconds from delivery to first click/report).
+    Shared by the global view and every dimension; each rate is capped at 100%."""
+    delivered,stages,first_hit,by_session=_stage_sessions(targets,events)
+    n=len(delivered); pct=lambda et: round(100*len(stages.get(et,set()))/n,1) if n else 0.0
+    rts=[(t0-by_session[sid].delivered_at).total_seconds() for sid,t0 in first_hit.items() if by_session[sid].delivered_at]
+    return {"targets":len(targets),"delivered":n,
+            "delivery_rate":round(100*n/len(targets),1) if targets else 0.0,
+            "open_rate":pct("email_opened"),
+            "click_rate":pct("link_clicked"),
+            "submission_rate":pct("credential_simulation_submitted"),
+            "reporting_rate":pct("simulation_reported"),
             "average_response_time_seconds":round(sum(rts)/len(rts),1) if rts else 0.0}
 
 def _funnel(targets,events):
-    delivered=sum(1 for t in targets if t.delivered_at); c=_event_counts(events)
-    pct=lambda n: round(100*n/delivered,1) if delivered else 0.0
+    delivered,stages,_fh,_bs=_stage_sessions(targets,events)
+    n=len(delivered); pct=lambda c: round(100*c/n,1) if n else 0.0
     rows=[]
     for stage,etype in FUNNEL_STAGES:
-        n=delivered if etype is None else c.get(etype,0)
-        rows.append({"stage":stage,"count":n,"rate":pct(n)})
+        c=n if etype is None else len(stages.get(etype,set()))
+        rows.append({"stage":stage,"count":c,"rate":pct(c)})
     return rows
 
 def analytics(db,campaign_id=None):
@@ -256,4 +272,7 @@ def risk_map(db):
     dist={l:0 for l in RISK_LEVELS}
     for _id,(_sc,lv) in risk.items(): dist[lv]=dist.get(lv,0)+1
     return {"by_department":group_by("department"),"by_role":group_by("role"),
-            "risk_distribution":[{"level":l,"count":dist.get(l,0)} for l in RISK_LEVELS]}
+            "risk_distribution":[{"level":l,"count":dist.get(l,0)} for l in RISK_LEVELS],
+            "people_targeted":len({t.employee_id for t in targets}),
+            "employees_total":len(emps),
+            "high_risk_employees":sum(1 for _id,(_sc,lv) in risk.items() if lv in ("high","critical"))}

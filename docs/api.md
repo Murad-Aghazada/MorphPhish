@@ -40,7 +40,8 @@ Important errors: 404 unknown IDs/sessions, 409 invalid lifecycle transition or 
   "delivery_rate": 100.0, "open_rate": 40.0, "click_rate": 60.0,
   "submission_rate": 20.0, "reporting_rate": 20.0,
   "average_response_time_seconds": 42.0,
-  "funnel": [ { "stage": "delivered", "count": 5, "rate": 100.0 }, … ],   // delivered→opened→clicked→submitted→reported, rate = % of delivered
+  "people_targeted": 14, "employees_total": 19, "high_risk_employees": 8,   // distinct targets, workforce size, high+critical count
+  "funnel": [ { "stage": "delivered", "count": 5, "rate": 100.0 }, … ],   // monotonic compromise funnel: delivered→opened→clicked→submitted (reported is a separate metric)
   "by_department": [ { "key": "Finance", "employees": 3, "average_risk": 81.8,
                        "delivered": 2, "click_rate": 50.0, "submission_rate": 50.0,
                        "reporting_rate": 0.0, "average_response_time_seconds": 30.1 }, … ],  // sorted by average_risk desc
@@ -48,6 +49,9 @@ Important errors: 404 unknown IDs/sessions, 409 invalid lifecycle transition or 
   "risk_distribution": [ { "level": "critical", "count": 4 }, { "level": "high", … }, … ]  // always the 4 ordered levels
 }
 ```
+
+Every rate counts each delivered **session** at most once per stage (never >100%), and
+the funnel is monotonic by implication (submit/report ⇒ clicked ⇒ opened).
 
 ## Email delivery (Week 4)
 

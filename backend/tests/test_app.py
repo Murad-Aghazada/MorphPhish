@@ -240,9 +240,14 @@ def test_analytics_risk_map(client):
     for et in ["email_opened","link_clicked","simulation_reported"]:
         client.post(f'/api/v1/simulation/{sess}/event',json={"session_id":sess,"event_type":et})
     a=client.get('/api/v1/analytics').json()
-    # funnel is ordered and expressed as % of delivered
-    assert [r['stage'] for r in a['funnel']]==["delivered","opened","clicked","submitted","reported"]
+    # funnel is the monotonic compromise funnel (reported is a separate positive metric)
+    assert [r['stage'] for r in a['funnel']]==["delivered","opened","clicked","submitted"]
     assert a['funnel'][0]['rate']==100.0 and a['funnel'][0]['count']==a['delivered']
+    assert all(a['funnel'][i]['count']>=a['funnel'][i+1]['count'] for i in range(len(a['funnel'])-1))
+    # a report happens on the landing page, so it implies the click/open stages
+    assert a['by_department'][0]['open_rate']>=a['by_department'][0]['click_rate']
+    # new headline KPIs
+    assert a['people_targeted']>=1 and a['employees_total']>=1 and 'high_risk_employees' in a
     # both dimensions carry the full engagement metric set, keyed by 'key', risk-sorted
     assert a['by_department'] and a['by_role']
     row=next(r for r in a['by_department'] if r['key']==e['department'])

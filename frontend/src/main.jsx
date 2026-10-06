@@ -167,12 +167,30 @@ const chartTip = (t) => ({ cursor: { fill: 'color-mix(in srgb, var(--iris) 8%, t
   labelStyle: { color: t.muted } });
 
 // Average risk (0–100) across a dimension — colored by the risk ramp.
-function RiskByDimension({ data, height = 300 }) {
+// Horizontal mode keeps long labels (e.g. role titles) readable instead of overflowing.
+const truncLabel = (v) => (v && v.length > 24 ? v.slice(0, 23) + '…' : v);
+function RiskByDimension({ data, height = 300, horizontal = false }) {
   const t = useChartTokens();
+  if (horizontal) {
+    const h = Math.max(height, data.length * 34 + 24);
+    return (
+      <ResponsiveContainer width="100%" height={h}>
+        <BarChart layout="vertical" data={data} margin={{ top: 4, right: 40, left: 8, bottom: 0 }} key={t.theme}>
+          <XAxis type="number" domain={[0, 100]} hide />
+          <YAxis type="category" dataKey="key" width={150} interval={0} tick={{ fill: t.muted, fontSize: 12 }} tickLine={false} axisLine={false} tickFormatter={truncLabel} />
+          <Tooltip {...chartTip(t)} formatter={(v) => [v, 'avg risk']} />
+          <Bar dataKey="average_risk" radius={[0, 5, 5, 0]} maxBarSize={24}>
+            {data.map((d, i) => <Cell key={i} fill={riskColor(d.average_risk)} />)}
+            <LabelList dataKey="average_risk" position="right" fill={t.muted} fontSize={11} />
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  }
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 16, right: 8, left: -12, bottom: 0 }} key={t.theme}>
-        <XAxis dataKey="key" interval={0} tick={{ fill: t.muted, fontSize: 11 }} tickLine={false} axisLine={{ stroke: t.grid }} angle={data.length > 6 ? -18 : 0} textAnchor={data.length > 6 ? 'end' : 'middle'} height={data.length > 6 ? 56 : 30} />
+        <XAxis dataKey="key" interval={0} tick={{ fill: t.muted, fontSize: 11 }} tickLine={false} axisLine={{ stroke: t.grid }} angle={data.length > 6 ? -18 : 0} textAnchor={data.length > 6 ? 'end' : 'middle'} height={data.length > 6 ? 56 : 30} tickFormatter={truncLabel} />
         <YAxis domain={[0, 100]} tick={{ fill: t.muted, fontSize: 12 }} tickLine={false} axisLine={false} />
         <Tooltip {...chartTip(t)} formatter={(v) => [v, 'avg risk']} />
         <Bar dataKey="average_risk" radius={[6, 6, 0, 0]} maxBarSize={54}>
@@ -259,10 +277,10 @@ function Dashboard() {
         <p>Generate role-aware lures on synthetic personas, review and approve each one, then watch how your organization responds — all in a fully isolated lab.</p>
       </section>
       <section className="grid4" style={{ marginTop: 16 }}>
-        <Metric label="Delivery" value={a.delivery_rate} unit="%" fill={a.delivery_rate} />
         <Metric label="Click rate" value={a.click_rate} unit="%" fill={a.click_rate} />
-        <Metric label="Submission" value={a.submission_rate} unit="%" fill={a.submission_rate} />
-        <Metric label="Reported" value={a.reporting_rate} unit="%" fill={a.reporting_rate} />
+        <Metric label="Submission rate" value={a.submission_rate} unit="%" fill={a.submission_rate} />
+        <Metric label="Report rate" value={a.reporting_rate} unit="%" fill={a.reporting_rate} />
+        <Metric label="High-risk staff" value={`${a.high_risk_employees ?? 0}/${a.employees_total ?? 0}`} />
       </section>
       <section className="grid2" style={{ marginTop: 16 }}>
         <div className="card">
@@ -706,20 +724,20 @@ function Analytics() {
     <>
       <Head eyebrow="Campaign outcomes" title="Analytics" sub="Role- and department-level human-risk map across every launched simulation." />
       <section className="grid4">
-        <Metric label="Targets" value={d.targets} />
-        <Metric label="Delivery" value={d.delivery_rate} unit="%" fill={d.delivery_rate} />
-        <Metric label="Open rate" value={d.open_rate} unit="%" fill={d.open_rate} />
-        <Metric label="Avg response" value={d.average_response_time_seconds} unit="s" />
+        <Metric label="Simulations sent" value={d.targets} />
+        <Metric label="Click rate" value={d.click_rate} unit="%" fill={d.click_rate} />
+        <Metric label="Submission rate" value={d.submission_rate} unit="%" fill={d.submission_rate} />
+        <Metric label="Report rate" value={d.reporting_rate} unit="%" fill={d.reporting_rate} />
       </section>
       <section className="grid4" style={{ marginTop: 16 }}>
-        <Metric label="Click rate" value={d.click_rate} unit="%" fill={d.click_rate} />
-        <Metric label="Submission" value={d.submission_rate} unit="%" fill={d.submission_rate} />
-        <Metric label="Reported" value={d.reporting_rate} unit="%" fill={d.reporting_rate} />
-        <Metric label="Campaigns" value={d.campaigns} />
+        <Metric label="Opened rate" value={d.open_rate} unit="%" fill={d.open_rate} />
+        <Metric label="Avg response" value={d.average_response_time_seconds} unit="s" />
+        <Metric label="People targeted" value={`${d.people_targeted ?? 0}/${d.employees_total ?? 0}`} />
+        <Metric label="High-risk staff" value={`${d.high_risk_employees ?? 0}/${d.employees_total ?? 0}`} />
       </section>
       <section className="grid2" style={{ marginTop: 16 }}>
         <div className="card">
-          <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Engagement funnel</h3><Badge kind="iris">% of delivered</Badge></div>
+          <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Compromise funnel</h3><Badge kind="iris">% of delivered</Badge></div>
           {hasData ? <FunnelChart data={d.funnel} /> : <Empty>Launch a simulation to populate the funnel.</Empty>}
         </div>
         <div className="card">
@@ -729,12 +747,12 @@ function Analytics() {
       </section>
       <section className="grid2" style={{ marginTop: 16 }}>
         <div className="card">
-          <h3>Average risk by department</h3>
+          <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Average risk by department</h3><Badge kind="iris">0–100</Badge></div>
           {d.by_department && d.by_department.length ? <RiskByDimension data={d.by_department} /> : <Empty>No department data yet.</Empty>}
         </div>
         <div className="card">
-          <h3>Average risk by role</h3>
-          {d.by_role && d.by_role.length ? <RiskByDimension data={d.by_role} /> : <Empty>No role data yet.</Empty>}
+          <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Average risk by role</h3><Badge kind="iris">0–100</Badge></div>
+          {d.by_role && d.by_role.length ? <RiskByDimension data={d.by_role} horizontal /> : <Empty>No role data yet.</Empty>}
         </div>
       </section>
       <div className="card" style={{ marginTop: 16 }}>
@@ -743,7 +761,7 @@ function Analytics() {
         {d.by_department && d.by_department.length > 0 && <div style={{ marginTop: 14 }}><DimensionTable data={d.by_department} label="Department" /></div>}
       </div>
       <div className="card" style={{ marginTop: 16 }}>
-        <h3>Engagement by role</h3>
+        <h3 style={{ marginTop: 0 }}>Engagement by role</h3>
         {d.by_role && d.by_role.length ? <DimensionTable data={d.by_role} label="Role" /> : <Empty>No role data yet.</Empty>}
       </div>
     </>
