@@ -288,3 +288,16 @@ def test_open_pixel_and_link_retired_after_completion(client):
     row=next(x for x in client.get('/api/v1/scenarios').json() if x['id']==s['id'])
     assert row['completed'] is True and row['department']==e['department']
     assert row['outcome']['reported'] is True and 'reported' in row['outcome']['reached']
+    assert row['outcome']['launched_at'] and row['outcome']['recipient_name']==e['full_name']
+
+def test_close_no_response_archives_and_retires_link(client):
+    e=client.post('/api/v1/employees',json=employee_payload('close@demo.example.com')).json()
+    s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
+    client.post(f"/api/v1/scenarios/{s['id']}/approve")
+    sess=client.post(f"/api/v1/scenarios/{s['id']}/launch",headers=ADMIN).json()['session_id']
+    r=client.post(f"/api/v1/scenarios/{s['id']}/close")       # close as no-response
+    assert r.status_code==200 and r.json()['status']=='CLOSED'
+    assert client.get(f'/api/v1/simulation/{sess}').status_code==410   # link retired
+    row=next(x for x in client.get('/api/v1/scenarios').json() if x['id']==s['id'])
+    assert row['status']=='CLOSED' and row['outcome']['launched_at'] and row['outcome']['recipient_name']==e['full_name']
+    assert client.post(f"/api/v1/scenarios/{s['id']}/close").status_code==409  # already closed, not ACTIVE

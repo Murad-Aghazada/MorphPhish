@@ -7,7 +7,7 @@ from .db import Base
 def uid(): return str(uuid.uuid4())
 def now(): return datetime.now(timezone.utc)
 class ScenarioStatus(str, enum.Enum):
-    DRAFT="DRAFT"; GENERATED="GENERATED"; REVIEW_REQUIRED="REVIEW_REQUIRED"; APPROVED="APPROVED"; ACTIVE="ACTIVE"; COMPLETED="COMPLETED"; REJECTED="REJECTED"
+    DRAFT="DRAFT"; GENERATED="GENERATED"; REVIEW_REQUIRED="REVIEW_REQUIRED"; APPROVED="APPROVED"; ACTIVE="ACTIVE"; COMPLETED="COMPLETED"; REJECTED="REJECTED"; CLOSED="CLOSED"
 class CampaignStatus(str, enum.Enum):
     DRAFT="DRAFT"; ACTIVE="ACTIVE"; COMPLETED="COMPLETED"; FAILED="FAILED"
 class Employee(Base):

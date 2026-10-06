@@ -207,25 +207,33 @@ def scenario_outcomes(db):
     `completed` once any of its targets submitted or reported (the link is retired)."""
     emps={e.id:e for e in db.scalars(select(Employee)).all()}
     camps_by_scen={}
-    for c in db.scalars(select(Campaign)).all(): camps_by_scen.setdefault(c.scenario_id,[]).append(c.id)
+    for c in db.scalars(select(Campaign)).all(): camps_by_scen.setdefault(c.scenario_id,[]).append(c)
     targets_by_camp={}
     for t in db.scalars(select(CampaignTarget)).all(): targets_by_camp.setdefault(t.campaign_id,[]).append(t)
-    types_by_session={}
-    for ev in db.scalars(select(InteractionEvent)).all(): types_by_session.setdefault(ev.session_id,set()).add(ev.event_type)
+    types_by_session={}; last_by_session={}
+    for ev in db.scalars(select(InteractionEvent)).all():
+        types_by_session.setdefault(ev.session_id,set()).add(ev.event_type)
+        cur=last_by_session.get(ev.session_id)
+        if cur is None or ev.occurred_at>cur: last_by_session[ev.session_id]=ev.occurred_at
     out={}
-    for scen_id,cids in camps_by_scen.items():
-        tgts=[t for cid in cids for t in targets_by_camp.get(cid,[])]
-        reached=set(); recipient=None; dept=None
+    for scen_id,camps in camps_by_scen.items():
+        tgts=[t for c in camps for t in targets_by_camp.get(c.id,[])]
+        reached=set(); recipient=None; recipient_name=None; dept=None; last_event=None
         for t in tgts:
             seen=types_by_session.get(t.session_id,set())
             reached|={stage for stage,et in _STAGE_EVENT.items() if et in seen}
+            le=last_by_session.get(t.session_id)
+            if le and (last_event is None or le>last_event): last_event=le
             e=emps.get(t.employee_id)
-            if e: recipient=e.email; dept=e.department
-        out[scen_id]={"launched":bool(tgts),"recipient":recipient,"department":dept,
+            if e: recipient=e.email; recipient_name=e.full_name; dept=e.department
+        launched_at=min((c.started_at for c in camps if c.started_at),default=None)
+        out[scen_id]={"launched":bool(tgts),"recipient":recipient,"recipient_name":recipient_name,"department":dept,
                       "opened":"opened" in reached,"clicked":"clicked" in reached,
                       "submitted":"submitted" in reached,"reported":"reported" in reached,
                       "reached":[s for s in _STAGE_EVENT if s in reached],
-                      "completed":("submitted" in reached) or ("reported" in reached)}
+                      "completed":("submitted" in reached) or ("reported" in reached),
+                      "launched_at":launched_at.isoformat() if launched_at else None,
+                      "last_event_at":last_event.isoformat() if last_event else None}
     return out
 
 def risk_map(db):

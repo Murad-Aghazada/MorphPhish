@@ -86,6 +86,13 @@ def approve(id:str,db:Session=Depends(get_db)):
 @router.post('/scenarios/{id}/reject',response_model=ScenarioOut)
 def reject(id:str,db:Session=Depends(get_db)):
     s=one(db,Scenario,id); s.status=ScenarioStatus.REJECTED.value; audit(db,"scenario_rejected","scenario",s.id); db.commit(); return s
+@router.post('/scenarios/{id}/close',response_model=ScenarioOut)
+def close_scenario(id:str,db:Session=Depends(get_db)):
+    """Close a launched simulation that never got a terminal response (no-response).
+    Retires the link and moves the scenario to the archive."""
+    s=one(db,Scenario,id)
+    if s.status!=ScenarioStatus.ACTIVE.value: raise HTTPException(409,"Only a launched (active) simulation can be closed")
+    s.status=ScenarioStatus.CLOSED.value; audit(db,"scenario_closed","scenario",s.id,{"reason":"no_response"}); db.commit(); return s
 EDITABLE={ScenarioStatus.REVIEW_REQUIRED.value,ScenarioStatus.GENERATED.value,ScenarioStatus.DRAFT.value}
 @router.patch('/scenarios/{id}',response_model=ScenarioOut)
 def edit_scenario(id:str,body:ScenarioUpdate,db:Session=Depends(get_db)):
@@ -167,6 +174,7 @@ def simulation(session_id:str,db:Session=Depends(get_db)):
     # and the link is retired — reopening it no longer serves the lure.
     if _session_completed(db,session_id): raise HTTPException(410,"This simulation has ended")
     c=one(db,Campaign,t.campaign_id); s=one(db,Scenario,c.scenario_id); e=one(db,Employee,s.employee_id)
+    if s.status==ScenarioStatus.CLOSED.value: raise HTTPException(410,"This simulation has ended")
     return SimulationOut(session_id=session_id,campaign_id=c.id,sender=_sender(e.department),recipient=f"{e.full_name} <{e.email}>",subject=s.subject,email_body=s.email_body,pretext=s.pretext,landing_page_message=s.landing_page_message,notice="AUTHORIZED SIMULATION — never enter a real password.")
 @router.post('/simulation/{session_id}/event',response_model=EventOut,status_code=201)
 def event(session_id:str,body:EventIn,db:Session=Depends(get_db)):

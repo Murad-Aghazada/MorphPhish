@@ -53,6 +53,12 @@ function useLoad(path) {
 const titleCase = (s) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 const riskColor = (score) => score < 35 ? 'var(--risk-low)' : score < 65 ? 'var(--risk-medium)' : score < 85 ? 'var(--risk-high)' : 'var(--risk-critical)';
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const STALE_DAYS = 7;
+const fmtDate = (iso) => { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); };
+const daysSince = (iso) => { if (!iso) return null; return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); };
+const simTime = (s) => Date.parse((s.outcome && s.outcome.launched_at) || s.created_at) || 0;
+const sortByTime = (list, dir) => [...list].sort((a, b) => dir === 'asc' ? simTime(a) - simTime(b) : simTime(b) - simTime(a));
+const SortToggle = ({ dir, onToggle }) => <button className="secondary" onClick={onToggle} title="Sort by date">{dir === 'desc' ? 'Newest first ↓' : 'Oldest first ↑'}</button>;
 
 const Load = () => <div className="stack"><div className="skeleton" /><div className="skeleton" /></div>;
 const Err = ({ e }) => <div className="error"><b>Something went wrong.</b> {e}</div>;
@@ -390,6 +396,11 @@ function ScenarioCard({ s, onChange }) {
   const act = (path, ok) => run(() => api(`/scenarios/${s.id}/${path}`, { method: 'POST' }), ok);
   // Regenerate updates THIS scenario in place (no new card).
   const regen = () => run(() => api(`/scenarios/${s.id}/regenerate`, { method: 'POST' }), 'Scenario regenerated.');
+  const close = () => run(() => api(`/scenarios/${s.id}/close`, { method: 'POST' }), 'Simulation closed — no response.');
+  const awaiting = s.status === 'ACTIVE' && !s.completed;       // launched, no terminal response yet
+  const idleDays = awaiting ? daysSince((s.outcome && (s.outcome.last_event_at || s.outcome.launched_at)) || s.created_at) : null;
+  const stale = idleDays != null && idleDays >= STALE_DAYS;
+  const dateLabel = (s.outcome && s.outcome.launched_at) ? 'Launched ' + fmtDate(s.outcome.launched_at) : 'Generated ' + fmtDate(s.created_at);
   const doLaunch = async () => {
     const auth64 = btoa(`${cred.u}:${cred.p}`);
     const r = await run(() => api(`/scenarios/${s.id}/launch`, { method: 'POST', headers: { Authorization: 'Basic ' + auth64 }, body: JSON.stringify({}) }), 'Simulation launched.');
@@ -402,6 +413,10 @@ function ScenarioCard({ s, onChange }) {
           {s.quality_score != null && <Badge kind={s.quality_score >= 80 ? 'low' : s.quality_score >= 50 ? 'medium' : 'high'} title="Automated quality score">Q {Math.round(s.quality_score)}</Badge>}
           <Badge kind={'status-' + s.status.toLowerCase()}>{s.status.replace('_', ' ')}</Badge>
         </div>
+      </div>
+      <div className="cardmeta">
+        <span>{dateLabel}</span>
+        {awaiting && <span className={'awaiting' + (stale ? ' stale' : '')}>{stale ? '⚠ No response' : 'Awaiting response'}{idleDays != null ? ` · ${idleDays}d` : ''}</span>}
       </div>
       {s.quality_notes && s.quality_notes.length > 0 && EDITABLE.has(s.status) &&
         <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>Review notes: {s.quality_notes.join(' · ')}</p>}
@@ -433,6 +448,7 @@ function ScenarioCard({ s, onChange }) {
           {s.status === 'REVIEW_REQUIRED' && <button onClick={() => act('approve', 'Scenario approved.')}>Approve</button>}
           {editable && <button className="ghost" onClick={() => act('reject', 'Scenario rejected.')}>Reject</button>}
           {s.status === 'APPROVED' && !auth && <button onClick={() => setAuth(true)}>Launch simulation</button>}
+          {awaiting && <button className="ghost" onClick={close} title="No terminal response — move to Archive">Close as no-response</button>}
         </div>
       )}
       {!edit && auth && (
@@ -499,6 +515,7 @@ function Simulations() {
   const [diff, setDiff] = useState('medium');
   const [lang, setLang] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sort, setSort] = useState('desc');
   const refresh = async () => setScen(await api('/scenarios'));
   const gen = async () => {
     setBusy(true);
@@ -527,15 +544,22 @@ function Simulations() {
         </select>
         <button disabled={!emp || busy} onClick={gen}>{busy ? 'Generating…' : 'Generate message'}</button>
       </div>
-      <div className="stack" style={{ marginTop: 4 }}>
-        {scen === null ? <Load /> : (() => {
-          // Active = still in the pipeline or running but not yet completed.
-          const active = scen.filter((s) => !s.completed && s.status !== 'REJECTED');
-          return active.length === 0
-            ? <Empty>No active simulations. Pick a persona above and generate a message — finished ones move to <b>Archive</b>.</Empty>
-            : active.map((s) => <ScenarioCard key={s.id} s={s} onChange={refresh} />);
-        })()}
-      </div>
+      {scen === null ? <Load /> : (() => {
+        // Active = still in the pipeline, or launched but not completed/closed.
+        const active = sortByTime(scen.filter((s) => !s.completed && !['REJECTED', 'CLOSED'].includes(s.status)), sort);
+        if (active.length === 0) return <div className="stack" style={{ marginTop: 4 }}><Empty>No active simulations. Pick a persona above and generate a message — finished ones move to <b>Archive</b>.</Empty></div>;
+        return (
+          <>
+            <div className="row" style={{ margin: '4px 2px 0' }}>
+              <span className="muted" style={{ fontSize: 13 }}>{active.length} active</span>
+              <SortToggle dir={sort} onToggle={() => setSort((d) => d === 'desc' ? 'asc' : 'desc')} />
+            </div>
+            <div className="stack" style={{ marginTop: 4 }}>
+              {active.map((s) => <ScenarioCard key={s.id} s={s} onChange={refresh} />)}
+            </div>
+          </>
+        );
+      })()}
     </>
   );
 }
@@ -559,23 +583,25 @@ function Archive() {
   const [lang, setLang] = useState('all');
   const [diff, setDiff] = useState('all');
   const [dept, setDept] = useState('all');
+  const [sort, setSort] = useState('desc');
   const refresh = async () => setScen(await api('/scenarios'));
   if (e) return <Err e={e} />;
   if (!scen) return <Load />;
-  const archived = scen.filter((s) => s.completed || s.status === 'REJECTED');
+  // Archived = completed (submitted/reported), closed as no-response, or rejected.
+  const archived = scen.filter((s) => s.completed || ['REJECTED', 'CLOSED'].includes(s.status));
   const depts = Array.from(new Set(archived.map((s) => s.department).filter(Boolean))).sort();
-  const filtered = archived.filter((s) =>
+  const filtered = sortByTime(archived.filter((s) =>
     (outcome === 'all' || outcomeBucket(s) === outcome) &&
     (lang === 'all' || s.language === lang) &&
     (diff === 'all' || s.difficulty === diff) &&
     (dept === 'all' || s.department === dept) &&
-    (!q || s.subject.toLowerCase().includes(q.toLowerCase()) || (s.outcome && (s.outcome.recipient || '').toLowerCase().includes(q.toLowerCase())))
-  );
+    (!q || (s.outcome && (s.outcome.recipient_name || '').toLowerCase().includes(q.toLowerCase())))  // search by recipient name only
+  ), sort);
   return (
     <>
-      <Head eyebrow="Finished simulations" title="Archive" sub="Completed runs (the recipient submitted or reported) and rejected drafts." />
+      <Head eyebrow="Finished simulations" title="Archive" sub="Completed runs, no-response closures, and rejected drafts." />
       <div className="card form" style={{ flexWrap: 'wrap' }}>
-        <input style={{ minWidth: 200, flex: 1 }} value={q} onChange={(x) => setQ(x.target.value)} placeholder="Search subject or recipient…" />
+        <input style={{ minWidth: 200, flex: 1 }} value={q} onChange={(x) => setQ(x.target.value)} placeholder="Search by recipient name…" />
         <select value={outcome} onChange={(x) => setOutcome(x.target.value)} title="Outcome">
           {OUTCOME_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
@@ -589,10 +615,11 @@ function Archive() {
         <select value={diff} onChange={(x) => setDiff(x.target.value)} title="Difficulty">
           <option value="all">All levels</option><option value="easy">easy</option><option value="medium">medium</option><option value="hard">hard</option>
         </select>
+        <SortToggle dir={sort} onToggle={() => setSort((d) => d === 'desc' ? 'asc' : 'desc')} />
       </div>
       <p className="muted" style={{ fontSize: 13, margin: '2px 2px 8px' }}>{filtered.length} of {archived.length} archived</p>
       <div className="stack" style={{ marginTop: 4 }}>
-        {archived.length === 0 ? <Empty>Nothing archived yet. A simulation moves here once the recipient submits or reports, or when a draft is rejected.</Empty>
+        {archived.length === 0 ? <Empty>Nothing archived yet. A simulation moves here once the recipient submits or reports, when it is closed as no-response, or when a draft is rejected.</Empty>
           : filtered.length === 0 ? <Empty>No archived simulations match these filters.</Empty>
             : filtered.map((s) => <ScenarioCard key={s.id} s={s} onChange={refresh} />)}
       </div>
