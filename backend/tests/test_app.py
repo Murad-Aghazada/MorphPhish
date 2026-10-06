@@ -189,6 +189,16 @@ def test_campaign_requires_approval(client):
     e=client.post('/api/v1/employees',json=employee_payload()).json(); s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"awareness","difficulty":"easy"}).json()
     assert client.post('/api/v1/campaigns',json={"scenario_id":s['id'],"name":"Blocked campaign"}).status_code==409
 
+def test_launch_tolerates_any_body_shape(client):
+    # A client (e.g. a stale cached bundle) may POST a non-object body to launch.
+    # It must never 422 on body shape; name is only read when the body is an object.
+    e=client.post('/api/v1/employees',json=employee_payload('body@demo.example.com')).json()
+    for raw in ['"a string"','[1,2]','123','null','{}']:
+        s=client.post('/api/v1/scenarios/generate',json={"employee_id":e['id'],"objective":"x","difficulty":"medium"}).json()
+        client.post(f"/api/v1/scenarios/{s['id']}/approve")
+        r=client.post(f"/api/v1/scenarios/{s['id']}/launch",headers={**ADMIN,"Content-Type":"application/json"},content=raw)
+        assert r.status_code==200, f"body {raw!r} -> {r.status_code} {r.text}"
+
 def test_llm_response_is_coerced_to_valid_scenario():
     # A real LLM can return partial / wrong-typed / non-JSON content. Coercion
     # must always yield a schema-valid scenario (filling gaps from the template)

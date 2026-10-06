@@ -1,6 +1,6 @@
 import secrets
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi import APIRouter, Depends, HTTPException, Form, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
@@ -93,12 +93,21 @@ def regenerate(id:str,db:Session=Depends(get_db)):
     try: regenerate_scenario(db,s); db.commit(); return s
     except ValueError as e: db.rollback(); raise HTTPException(422,str(e))
     except RuntimeError as e: db.rollback(); raise HTTPException(503,str(e))
+async def _optional_name(request:Request):
+    """Read an optional campaign name from the request body WITHOUT a typed body
+    param, so any body shape (object, array, string, empty, or malformed) is
+    accepted instead of 422ing. The name is used only if the body is an object."""
+    try:
+        payload=await request.json()
+    except Exception: return None
+    return (payload.get("name") or None) if isinstance(payload,dict) else None
+
 @router.post('/scenarios/{id}/launch',response_model=LaunchOut)
-def launch_scenario(id:str,body:ScenarioLaunchRequest|None=None,admin:str=Depends(require_admin),db:Session=Depends(get_db)):
+async def launch_scenario(id:str,request:Request,admin:str=Depends(require_admin),db:Session=Depends(get_db)):
     s=one(db,Scenario,id)
     if s.status!=ScenarioStatus.APPROVED.value: raise HTTPException(409,"Scenario must be approved before launch")
     e=one(db,Employee,s.employee_id)
-    name=(body.name if body and body.name else None) or f"{s.subject[:60]} — {datetime.now(timezone.utc):%Y-%m-%d %H:%M}"
+    name=(await _optional_name(request)) or f"{s.subject[:60]} — {datetime.now(timezone.utc):%Y-%m-%d %H:%M}"
     c=Campaign(scenario_id=s.id,name=name,provider=settings.campaign_provider); db.add(c); db.flush(); audit(db,"campaign_created","campaign",c.id)
     try: t=launch_campaign(db,c,s,e); db.commit()
     except (ValueError,RuntimeError) as ex: db.rollback(); raise HTTPException(503 if isinstance(ex,RuntimeError) else 409,str(ex))
