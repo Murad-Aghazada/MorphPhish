@@ -60,13 +60,16 @@ in `deploy/cloudflared/`.
    install command shown (the long string after `--token`).
 2. Same tunnel → **Public Hostname → Add**:
    - Subdomain `morphphish`, Domain `baysarb.com`
-   - Service **HTTP**, URL `localhost:3000` (connector on the device) or `10.13.2.3:3000`
-     (connector on the server). Save — this creates the proxied DNS record for you.
+   - Service **HTTP**, URL **`10.13.2.3:3000`** (the app's VPN/LAN IP — works from any
+     connector host). Use `host.docker.internal:3000` only if the connector runs on the
+     same machine as the app under Docker Desktop. Save — this creates the proxied DNS record.
    - If it warns that a `morphphish` DNS record already exists, delete that old A record first.
-3. Run the connector (on the device if it has internet egress; else on the server):
+3. Run the connector (anywhere with internet egress that can reach `10.13.2.3:3000`):
    ```bash
    cd MorphPhish/deploy/cloudflared
-   echo "TUNNEL_TOKEN=<paste-token>" > .env      # gitignored
+   # Create .env as UTF-8 (NOT PowerShell `echo >`, which writes UTF-16 and breaks Compose):
+   #   Linux/mac:  printf 'TUNNEL_TOKEN=%s\n' '<paste-token>' > .env
+   #   Windows PS: Set-Content .env 'TUNNEL_TOKEN=<paste-token>' -Encoding ascii -NoNewline
    docker compose up -d
    docker compose logs --tail=20 cloudflared     # expect "Registered tunnel connection"
    ```

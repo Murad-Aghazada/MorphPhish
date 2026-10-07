@@ -1,17 +1,21 @@
-# Cloudflare Tunnel connector. Run this ON THE DEVICE (10.13.2.3) if it has outbound
-# internet; otherwise run it on the public server and set the tunnel's public-hostname
-# service URL to http://10.13.2.3:3000 instead of http://localhost:3000.
+# Cloudflare Tunnel connector. Dials OUT to Cloudflare (no inbound ports needed).
 #
-# 1) Create the tunnel + public hostname in the Cloudflare Zero Trust dashboard
-#    (see docs/deploy-vpn-proxy.md), copy the connector token.
-# 2) echo "TUNNEL_TOKEN=<paste-token>" > .env      # kept out of git
-# 3) docker compose up -d
+# Setup:
+#   1) Create the tunnel + public hostname in the Cloudflare Zero Trust dashboard
+#      (see docs/deploy-vpn-proxy.md). For the public-hostname Service URL, point it at
+#      the app by an address reachable FROM this container:
+#        * http://10.13.2.3:3000          (the app's VPN/LAN IP — works from anywhere routable)
+#        * http://host.docker.internal:3000 (app on the SAME machine, Docker Desktop)
+#   2) Create a UTF-8 .env next to this file:   TUNNEL_TOKEN=<token>
+#      (PowerShell's `echo >` writes UTF-16 and breaks Compose — save as UTF-8/ASCII.)
+#   3) docker compose up -d   &&   docker compose logs -f cloudflared
 #
-# network_mode: host so the tunnel can reach the app on localhost:3000. No inbound
-# ports are opened — the connector dials out to Cloudflare over 443.
+# Bridge networking (default) is used so this runs identically on Linux and Docker
+# Desktop; the connector reaches the app via the address you set in step 1.
 services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
-    network_mode: host
     command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # lets host.docker.internal work on Linux too
