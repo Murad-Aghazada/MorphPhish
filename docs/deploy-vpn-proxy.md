@@ -48,15 +48,50 @@ docker compose ps
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/        # 200
 ```
 
-## 3. On the public server (nginx)
-Copy `deploy/nginx-morphphish.conf` to `/etc/nginx/conf.d/morphphish.conf`, set
-`DEVICE_VPN_IP` to the Docker host's VPN address, then:
+## 3. On the public server (nginx) — without disturbing existing sites
+This only *adds* a name-based virtual host for `morphphish.baysarb.com`; it shares
+ports 80/443 with the other sites via normal virtual hosting and does not change them.
+Two rules keep it safe: **always `nginx -t` before reloading** (a failed test means you
+simply don't reload, and the running config is untouched — reload is zero-downtime),
+and **never `restart`** (use `reload`).
+
 ```bash
-sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d morphphish.baysarb.com     # obtains the cert and adds the 443 block + redirect
+# 0) back up the current config (instant rollback if needed)
+sudo cp -a /etc/nginx /etc/nginx.bak.$(date +%F)
+
+# 1) pre-flight: make sure nothing already claims this host
+sudo grep -rn "morphphish.baysarb.com" /etc/nginx/        # expect: no matches
+sudo nginx -T | grep -c "server_name _.*default_server"   # just informational
+
+# 2) drop in the vhost and set the device's VPN IP
+sudo cp deploy/nginx-morphphish.conf /etc/nginx/conf.d/morphphish.conf
+sudo sed -i 's/DEVICE_VPN_IP/<device-vpn-ip>/' /etc/nginx/conf.d/morphphish.conf
+
+# 3) TEST FIRST — only reload if it says "syntax is ok / test is successful"
+sudo nginx -t
+sudo systemctl reload nginx
+
+# 4) get the TLS cert. certonly does NOT rewrite your other vhosts; it only obtains
+#    the cert (the nginx plugin handles the challenge and reverts).
+sudo certbot certonly --nginx -d morphphish.baysarb.com
 ```
+Then uncomment the HTTPS block at the bottom of `morphphish.conf` (it references the
+cert paths certbot just created) and turn the port-80 block into a redirect — both are
+pre-written in the file — then `sudo nginx -t && sudo systemctl reload nginx` again.
+
+> Prefer the one-shot `sudo certbot --nginx -d morphphish.baysarb.com`? It also works
+> and auto-adds the 443 block, but it *edits* nginx config in place. With the backup from
+> step 0 and `nginx -t` as the gate, it's still safe; `certonly` is just the most hands-off.
+
 Open **https://morphphish.baysarb.com** and sign in with the admin credentials. The
 Mailpit inbox is the **Mail inbox ↗** link in the sidebar (same login).
+
+### If anything looks wrong
+```bash
+sudo rm /etc/nginx/conf.d/morphphish.conf   # remove just this vhost
+sudo nginx -t && sudo systemctl reload nginx
+# or full rollback: sudo rm -rf /etc/nginx && sudo mv /etc/nginx.bak.<date> /etc/nginx && sudo systemctl reload nginx
+```
 
 ## Update
 ```bash
