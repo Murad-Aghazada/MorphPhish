@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     login_max_attempts: int = 5             # failed sign-ins before lockout
     login_lockout_minutes: int = 15         # lockout duration per client IP
     trust_proxy_headers: bool = False       # set true ONLY behind a trusted reverse proxy (nginx)
+    cookie_secure: bool | None = None       # None = secure when APP_ENV=production; set false for plain-HTTP (IP:port) access
     database_url: str = "sqlite:///./riskintern.db"
     cors_origins: str = "http://localhost:3000"
     frontend_url: str = "http://localhost:3000"

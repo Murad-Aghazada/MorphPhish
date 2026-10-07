@@ -1,4 +1,38 @@
-# Deploy: Docker on a VPN host, published via the cluster's Traefik
+# Deploy
+
+## Simplest: direct `http://IP:3000` (no proxy, no cluster, no domain)
+If you just want it reachable quickly, skip Traefik/ArgoCD entirely — the compose stack
+already serves the SPA, API and Mailpit on one port. On the Docker host:
+```bash
+cd MorphPhish && git pull
+cp .env.example .env      # if you don't have one yet
+```
+Set these in `.env` (replace `<IP>` with the host IP you'll browse to, e.g. 84.247.143.190 or the VPN IP):
+```ini
+APP_ENV=production
+APP_SECRET_KEY=<random 32+ chars>
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=<strong>
+COOKIE_SECURE=false                  # required for plain HTTP, so the Mailpit gate works
+FRONTEND_URL=http://<IP>:3000
+BACKEND_URL=http://<IP>:3000
+CORS_ORIGINS=http://<IP>:3000
+LLM_PROVIDER=gemini
+LLM_API_KEY=<key>
+LLM_MODEL=gemini-flash-lite-latest
+EMAIL_PROVIDER=smtp
+SEED_ON_START=true
+```
+```bash
+docker compose up -d --build
+```
+Open **http://<IP>:3000** and sign in. Make sure the host firewall allows inbound 3000.
+Caveat: plain HTTP means credentials travel unencrypted — fine for a short internal
+demo; use the domain + TLS section below if it needs to be properly public.
+
+---
+
+## With a domain + HTTPS: Docker on a VPN host, published via the cluster's Traefik
 
 The app runs as the compose stack on a Docker host that is only on the VPN. The
 public server is a **k3s node whose Traefik owns :80/:443**, so the domain is published

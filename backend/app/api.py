@@ -33,7 +33,9 @@ def login(body:LoginRequest,request:Request,response:Response):
     token=make_token(body.username); ttl=settings.token_ttl_minutes*60
     # Cookie mirrors the bearer token so top-level navigations (the Mailpit gate)
     # carry the session. httpOnly (no JS access) + SameSite=strict (no cross-site send).
-    response.set_cookie(SESSION_COOKIE,token,max_age=ttl,httponly=True,samesite="strict",secure=_IS_PROD,path="/")
+    # Secure defaults to on in production, but COOKIE_SECURE=false allows plain-HTTP (IP:port) access.
+    secure=settings.cookie_secure if settings.cookie_secure is not None else _IS_PROD
+    response.set_cookie(SESSION_COOKIE,token,max_age=ttl,httponly=True,samesite="strict",secure=secure,path="/")
     return TokenOut(access_token=token,expires_in=ttl)
 @public.post('/auth/logout')
 def logout(response:Response):
