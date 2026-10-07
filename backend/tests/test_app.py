@@ -242,6 +242,14 @@ def test_login_lockout(anon):
     # even correct creds are refused while locked out
     assert anon.post('/api/v1/auth/login',json={'username':'root','password':'root'}).status_code==429
 
+def test_login_lockout_not_evaded_by_forged_xff(anon):
+    # Default (no trusted proxy): a rotating X-Forwarded-For must NOT reset the
+    # per-client throttle — the attacker's peer address is used, not the header.
+    for i in range(5):
+        r=anon.post('/api/v1/auth/login',json={'username':'root','password':'bad'},headers={'X-Forwarded-For':f'10.0.0.{i}'})
+        assert r.status_code==401
+    assert anon.post('/api/v1/auth/login',json={'username':'root','password':'bad'},headers={'X-Forwarded-For':'10.0.0.99'}).status_code==429
+
 def test_launch_blocked_for_unauthorized_recipient_domain(client):
     # The authorized-domain allow-list is a hard launch gate for every provider,
     # not just the SMTP sender — a persona outside it can never be targeted.

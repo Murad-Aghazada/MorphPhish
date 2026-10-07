@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     token_ttl_minutes: int = 480            # admin session lifetime (8h)
     login_max_attempts: int = 5             # failed sign-ins before lockout
     login_lockout_minutes: int = 15         # lockout duration per client IP
+    trust_proxy_headers: bool = False       # set true ONLY behind a trusted reverse proxy (nginx)
     database_url: str = "sqlite:///./riskintern.db"
     cors_origins: str = "http://localhost:3000"
     frontend_url: str = "http://localhost:3000"

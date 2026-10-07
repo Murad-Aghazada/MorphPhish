@@ -64,9 +64,20 @@ def reset_rate_limit():
     _LOGIN.clear()
 
 def client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
+    """Best-effort client identity for the login throttle.
+
+    X-Forwarded-For is only honoured when TRUST_PROXY_HEADERS is set (i.e. the
+    backend sits behind our reverse proxy), and then we take the LAST entry — the
+    one the trusted proxy appended — because any entries to its left are supplied
+    by the client and are spoofable. When not behind a trusted proxy we ignore the
+    header entirely and use the peer address, so the lockout can't be evaded by
+    forging X-Forwarded-For."""
+    if settings.trust_proxy_headers:
+        fwd = request.headers.get("x-forwarded-for")
+        if fwd:
+            parts = [p.strip() for p in fwd.split(",") if p.strip()]
+            if parts:
+                return parts[-1]
     return request.client.host if request.client else "unknown"
 
 def login_guard_check(ip: str):
