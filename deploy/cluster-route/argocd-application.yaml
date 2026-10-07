@@ -1,0 +1,38 @@
+# ArgoCD Application that manages ONLY the routing shim (Service + EndpointSlice +
+# Ingress) which points Traefik at the MorphPhish app running as Docker on the VPN
+# host. The application itself is not in the cluster.
+#
+# Register it the GitOps way so ArgoCD doesn't prune the route:
+#   * Preferred: add this file to your infra GitOps repo under the app-of-apps path
+#     that defines the other `argocd-*` Applications, then commit — ArgoCD creates it.
+#   * If your `infra` AppProject restricts source repos to your own GitLab, ArgoCD
+#     cannot pull from the public GitHub repo below — in that case copy
+#     deploy/cluster-route/morphphish-route.yaml into your GitOps repo instead and
+#     point this Application's source at that repo/path.
+#
+# Adjust: `project` (AppProject that allows this repo + the destination namespace) and
+# the source repoURL/targetRevision if you mirror the repo.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: morphphish-route
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: morphphish
+spec:
+  project: infra                      # <-- an AppProject permitting this repo + namespace
+  source:
+    repoURL: https://github.com/iqulzade/MorphPhish.git
+    targetRevision: main
+    path: deploy/cluster-route
+    directory:
+      include: "morphphish-route.yaml"   # only the route objects, not this Application
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: morphphish-route
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

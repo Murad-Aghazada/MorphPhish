@@ -60,17 +60,15 @@ sudo k3s kubectl get clusterissuer                                      # confir
 Then apply the routing shim (`deploy/cluster-route/morphphish-route.yaml` — a
 selectorless Service + EndpointSlice → `10.13.2.3:3000` and a Traefik Ingress with TLS):
 
-**Because this cluster runs ArgoCD** (which prunes resources not in Git), add the shim
-through GitOps so it isn't deleted:
-```bash
-# copy deploy/cluster-route/morphphish-route.yaml into the repo/path ArgoCD syncs,
-# commit + push, and let ArgoCD apply it. Find the repo with:
-sudo k3s kubectl -n argocd get applications -o wide
-```
-Only if no ArgoCD Application would prune this namespace, you may apply it directly:
-```bash
-sudo k3s kubectl apply -f deploy/cluster-route/morphphish-route.yaml
-```
+**This cluster is a full app-of-apps GitOps setup** (project `infra`), so register the
+route as an ArgoCD Application rather than `kubectl apply` (which would be pruned). Use
+`deploy/cluster-route/argocd-application.yaml`:
+- Add it to your infra GitOps repo alongside the other `argocd-*` Application
+  definitions, commit, and ArgoCD creates it. It syncs only `morphphish-route.yaml`
+  (the Service + EndpointSlice + Ingress) into the `morphphish-route` namespace.
+- Set `spec.project` to an AppProject that permits the source repo and the destination
+  namespace. If `infra` only allows your own GitLab, copy `morphphish-route.yaml` into
+  your GitOps repo and point the Application's `source` there instead of the GitHub repo.
 
 Verify the cert issues (a minute or two) and the site answers:
 ```bash
@@ -81,11 +79,15 @@ curl -sI https://morphphish.baysarb.com | head -n1          # expect HTTP/2 200
 Open **https://morphphish.baysarb.com**, sign in, and the Mailpit inbox is the
 **Mail inbox ↗** link in the sidebar (same login).
 
-## Update
+## Update / redeploy to the latest build
+If you deployed an earlier build, pull and rebuild **with the prod overlay** and make
+sure `.env` has the step-2 values (especially `APP_ENV=production` and the three
+`https://morphphish.baysarb.com` URLs, or the Mailpit gate and sim links misbehave):
 ```bash
 # on the device
 git pull
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+docker compose ps        # only the frontend should publish a host port (3000)
 ```
 
 ## Stop / remove completely
