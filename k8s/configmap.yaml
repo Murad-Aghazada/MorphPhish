@@ -18,10 +18,10 @@ data:
   SMTP_PORT: "1025"
   SMTP_FROM: "simulation@demo.example.com"
   AUTHORIZED_EMAIL_DOMAINS: "demo.example.com,example.com"
-  # --- public origin: must match the Ingress host exactly (edit if your domain differs) ---
-  FRONTEND_URL: "https://morphphish.example.com"
-  BACKEND_URL: "https://morphphish.example.com"
-  CORS_ORIGINS: "https://morphphish.example.com"
+  # --- public origin: must match the Ingress host exactly ---
+  FRONTEND_URL: "https://morphphish.baysarb.com"
+  BACKEND_URL: "https://morphphish.baysarb.com"
+  CORS_ORIGINS: "https://morphphish.baysarb.com"
   # Two proxy hops (ingress-nginx -> frontend nginx) make a precise client IP unreliable,
   # so we don't trust forwarded headers; the login lockout is coarse (global) but un-spoofable.
   TRUST_PROXY_HEADERS: "false"

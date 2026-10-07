@@ -11,8 +11,6 @@ spec:
     metadata:
       labels: { app: frontend, app.kubernetes.io/part-of: morphphish }
     spec:
-      imagePullSecrets:
-        - name: regcred
       containers:
         - name: frontend
           # IMPORTANT: build this image with --build-arg VITE_API_URL=/api/v1 so the

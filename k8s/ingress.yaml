@@ -11,10 +11,10 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: ["morphphish.example.com"]
+    - hosts: ["morphphish.baysarb.com"]
       secretName: morphphish-tls          # created automatically by cert-manager
   rules:
-    - host: morphphish.example.com
+    - host: morphphish.baysarb.com
       http:
         paths:
           # All traffic goes to the frontend; its nginx proxies /api and /mailpit

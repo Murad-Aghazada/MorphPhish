@@ -12,8 +12,6 @@ spec:
     metadata:
       labels: { app: backend, app.kubernetes.io/part-of: morphphish }
     spec:
-      imagePullSecrets:
-        - name: regcred            # private Docker Hub pull secret (see k8s/README.md)
       containers:
         - name: backend
           image: morphphish-backend        # rewritten by kustomize (images:)
