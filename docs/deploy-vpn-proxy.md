@@ -1,22 +1,23 @@
 # Deploy
 
-## Simplest: direct `http://IP:3000` (no proxy, no cluster, no domain)
-If you just want it reachable quickly, skip Traefik/ArgoCD entirely — the compose stack
-already serves the SPA, API and Mailpit on one port. On the Docker host:
+The app runs as the compose stack on the VPN host **10.13.2.3** and serves the SPA,
+API and Mailpit on one port (**3000**). Two ways to reach it from outside.
+
+## A. App config on the device (10.13.2.3) — do this first
 ```bash
 cd MorphPhish && git pull
 cp .env.example .env      # if you don't have one yet
 ```
-Set these in `.env` (replace `<IP>` with the host IP you'll browse to, e.g. 84.247.143.190 or the VPN IP):
+Set in `.env` (use the address users will actually open — see options B1/B2 for what to put):
 ```ini
 APP_ENV=production
-APP_SECRET_KEY=<random 32+ chars>
+APP_SECRET_KEY=<random 32+ chars>      # not "change-me*"
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=<strong>
-COOKIE_SECURE=false                  # required for plain HTTP, so the Mailpit gate works
-FRONTEND_URL=http://<IP>:3000
-BACKEND_URL=http://<IP>:3000
-CORS_ORIGINS=http://<IP>:3000
+ADMIN_PASSWORD=<strong>                 # not "root"
+COOKIE_SECURE=false                     # required for plain HTTP, so the Mailpit gate works
+FRONTEND_URL=http://<public-address>
+BACKEND_URL=http://<public-address>
+CORS_ORIGINS=http://<public-address>
 LLM_PROVIDER=gemini
 LLM_API_KEY=<key>
 LLM_MODEL=gemini-flash-lite-latest
@@ -25,123 +26,49 @@ SEED_ON_START=true
 ```
 ```bash
 docker compose up -d --build
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/   # expect 200
 ```
-Open **http://<IP>:3000** and sign in. Make sure the host firewall allows inbound 3000.
-Caveat: plain HTTP means credentials travel unencrypted — fine for a short internal
-demo; use the domain + TLS section below if it needs to be properly public.
+`<public-address>` is whatever the browser hits: `10.13.2.3:3000` (B1) or
+`84.247.143.190:8080` / `morphphish.baysarb.com:8080` (B2).
 
----
+## B1. Direct, if the device port is reachable
+If `10.13.2.3:3000` is reachable from where you browse (e.g. on the VPN), just open
+**http://10.13.2.3:3000**. Set the three URLs above to `http://10.13.2.3:3000`. Done.
 
-## With a domain + HTTPS: Docker on a VPN host, published via the cluster's Traefik
-
-The app runs as the compose stack on a Docker host that is only on the VPN. The
-public server is a **k3s node whose Traefik owns :80/:443**, so the domain is published
-by adding a small routing shim to the cluster that forwards to the device. The
-application itself never runs in the cluster.
-
-```
-browser ──HTTPS──> Traefik (k3s, TLS via cert-manager) ──VPN──> 10.13.2.3:3000
-morphphish.baysarb.com                                            (frontend nginx)
-  A -> 84.247.143.190                                             ├── /         SPA
-                                                                  ├── /api/     → backend
-                                                                  └── /mailpit/ → mailpit (gated)
-```
-
-Facts for this environment:
-- Server public IP: **84.247.143.190** (IPv6 `2a02:c207:2324:3626::1`).
-- Device (Docker host) VPN IP: **10.13.2.3**, port **3000**.
-- Ingress: **Traefik** (k3s). TLS: cert-manager ClusterIssuer **letsencrypt**.
-- `kubectl` on the server needs `sudo k3s kubectl` (or `KUBECONFIG=/etc/rancher/k3s/k3s.yaml`).
-
-## 1. DNS
-`morphphish.baysarb.com` → **A `84.247.143.190`** (optionally AAAA `2a02:c207:2324:3626::1`).
-Let's Encrypt (HTTP-01) needs this resolving before the cert can be issued.
-
-## 2. On the VPN'd Docker host (10.13.2.3)
+## B2. Reverse proxy on the public server (reach it from the internet)
+Put a tiny proxy on the public server (84.247.143.190) that forwards to the device.
+Traefik owns 80/443 there, so this uses **8080**.
 ```bash
-git clone https://github.com/iqulzade/MorphPhish && cd MorphPhish
-cp .env.example .env
+# on the public server (Docker is installed there)
+cd MorphPhish/deploy/server-proxy
+# nginx.conf already targets 10.13.2.3:3000 — edit it if the device IP/port differ
+docker compose up -d
 ```
-Edit `.env`:
-```ini
-APP_ENV=production                       # secure cookies + HSTS; refuses default secrets
-APP_SECRET_KEY=<python -c "import secrets;print(secrets.token_urlsafe(32))">
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=<strong-password>         # must NOT be the default, or the backend won't boot
-FRONTEND_URL=https://morphphish.baysarb.com
-BACKEND_URL=https://morphphish.baysarb.com
-CORS_ORIGINS=https://morphphish.baysarb.com
-TRUST_PROXY_HEADERS=false                # two proxy hops -> coarse (global) login lockout, un-spoofable
-LLM_PROVIDER=gemini
-LLM_API_KEY=<your-gemini-key>
-LLM_MODEL=gemini-flash-lite-latest
-EMAIL_PROVIDER=smtp
-SEED_ON_START=true
-```
-Start it (overlay publishes only :3000 on the host):
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/        # expect 200
-```
+Now it's reachable at **http://84.247.143.190:8080**. Set the three URLs on the device
+to `http://84.247.143.190:8080` (or the domain, below) and `docker compose up -d --build`
+again so links/cookies match. Make sure inbound **8080** is open on the server firewall.
 
-## 3. On the server — verify reachability, then add the route
-```bash
-# Traefik (a pod) will connect to the device; first confirm the node can reach it:
-curl -s -o /dev/null -w "%{http_code}\n" http://10.13.2.3:3000          # expect 200
-sudo k3s kubectl get ingressclass                                       # confirm name is "traefik"
-sudo k3s kubectl get clusterissuer                                      # confirm "letsencrypt" is Ready
-```
-Then apply the routing shim (`deploy/cluster-route/morphphish-route.yaml` — a
-selectorless Service + EndpointSlice → `10.13.2.3:3000` and a Traefik Ingress with TLS):
+Remove the proxy anytime: `cd deploy/server-proxy && docker compose down`.
 
-**This cluster is a full app-of-apps GitOps setup** (project `infra`), so register the
-route as an ArgoCD Application rather than `kubectl apply` (which would be pruned). Use
-`deploy/cluster-route/argocd-application.yaml`:
-- Add it to your infra GitOps repo alongside the other `argocd-*` Application
-  definitions, commit, and ArgoCD creates it. It syncs only `morphphish-route.yaml`
-  (the Service + EndpointSlice + Ingress) into the `morphphish-route` namespace.
-- Set `spec.project` to an AppProject that permits the source repo and the destination
-  namespace. If `infra` only allows your own GitLab, copy `morphphish-route.yaml` into
-  your GitOps repo and point the Application's `source` there instead of the GitHub repo.
+## Domain (optional, no certificate needed)
+Point DNS **A `morphphish.baysarb.com` → 84.247.143.190**, then open
+**http://morphphish.baysarb.com:8080** (set the device's three URLs to that). The `:8080`
+is needed because Traefik holds port 80. A *clean* `https://morphphish.baysarb.com`
+(no port, with a cert) is only possible through that Traefik — ask me and I'll add the
+small route for it; it's the one thing that must live in the cluster.
 
-Verify the cert issues (a minute or two) and the site answers:
+## Update / remove
 ```bash
-sudo k3s kubectl -n morphphish-route get ingress,endpointslice
-sudo k3s kubectl -n morphphish-route get certificate        # READY should become True
-curl -sI https://morphphish.baysarb.com | head -n1          # expect HTTP/2 200
-```
-Open **https://morphphish.baysarb.com**, sign in, and the Mailpit inbox is the
-**Mail inbox ↗** link in the sidebar (same login).
-
-## Update / redeploy to the latest build
-If you deployed an earlier build, pull and rebuild **with the prod overlay** and make
-sure `.env` has the step-2 values (especially `APP_ENV=production` and the three
-`https://morphphish.baysarb.com` URLs, or the Mailpit gate and sim links misbehave):
-```bash
-# on the device
-git pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-docker compose ps        # only the frontend should publish a host port (3000)
-```
-
-## Stop / remove completely
-```bash
-# cluster route: delete from the GitOps repo (ArgoCD prunes it), or:
-sudo k3s kubectl delete namespace morphphish-route
-# on the device:
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
-# optionally remove the DNS record.
+# device: update
+git pull && docker compose up -d --build
+# device: remove everything
+docker compose down -v
+# server: remove the proxy
+cd deploy/server-proxy && docker compose down
 ```
 
 ## Notes
-- **Does not disturb other services**: the shim is its own namespace and one extra
-  Traefik host rule; it doesn't touch existing routes. Traefik already multiplexes
-  many hosts on 80/443.
-- **Must be HTTPS**: `APP_ENV=production` marks the session cookie `Secure`; the Mailpit
-  gate relies on it. Traefik terminates TLS, so this holds.
-- **Login lockout is global/coarse** (two proxy hops hide the real client IP) —
-  un-spoofable, but a flood briefly locks the single admin out; clears after
-  `LOGIN_LOCKOUT_MINUTES`.
-- **If Traefik can't reach the device** even though the node can, it's pod-egress to the
-  VPN subnet — tell me and we'll adjust (hostNetwork solver or a node route).
+- **Plain HTTP** means credentials travel unencrypted — fine for a short internal/VPN
+  demo. For real public use, get the `https://…` Traefik route.
+- `COOKIE_SECURE=false` is what makes the Mailpit gate work over HTTP.
 - The compose database is Postgres with a volume; `down -v` wipes it.
