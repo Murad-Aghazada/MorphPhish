@@ -268,6 +268,8 @@ button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 .loginerr { margin: 14px 0 0; padding: 9px 12px; font-size: 13px; color: var(--risk-critical); background: color-mix(in srgb, var(--risk-critical) 12%, transparent); border-radius: 9px; }
 .logoutbtn { width: 100%; margin-top: 8px; padding: 9px; font-size: 13px; background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 9px; cursor: pointer; }
 .logoutbtn:hover { color: var(--ink); border-color: var(--iris); }
+.mailpitlink { display: block; font-size: 12.5px; color: var(--muted); text-decoration: none; padding: 2px 0; }
+.mailpitlink:hover { color: var(--iris); }
 
 /* ---- admin console sign-in (two-panel) ---- */
 .loginpage { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px;

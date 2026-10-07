@@ -235,6 +235,23 @@ def test_auth_login_me_and_gating(anon):
     assert anon.get('/api/v1/employees',headers=h).status_code==200
     assert anon.get('/api/v1/employees',headers={"Authorization":"Bearer not.a.real.token"}).status_code==401
 
+def test_auth_check_gate_for_mailpit(anon):
+    # nginx auth_request target: 401 without a session, 200 with the cookie set at
+    # login, and 200 with a bearer token.
+    assert anon.get('/api/v1/auth/check').status_code==401
+    anon.post('/api/v1/auth/login',json={'username':'root','password':'root'})  # sets mp_session cookie
+    assert 'mp_session' in anon.cookies
+    assert anon.get('/api/v1/auth/check').status_code==200
+    anon.cookies.clear()
+    assert anon.get('/api/v1/auth/check').status_code==401
+    tok=anon.post('/api/v1/auth/login',json={'username':'root','password':'root'}).json()['access_token']
+    anon.cookies.clear()
+    assert anon.get('/api/v1/auth/check',headers={'Authorization':f'Bearer {tok}'}).status_code==200
+    # logout clears the cookie
+    anon.post('/api/v1/auth/login',json={'username':'root','password':'root'})
+    anon.post('/api/v1/auth/logout')
+    assert anon.get('/api/v1/auth/check').status_code==401
+
 def test_login_lockout(anon):
     for _ in range(5): assert anon.post('/api/v1/auth/login',json={'username':'root','password':'bad'}).status_code==401
     locked=anon.post('/api/v1/auth/login',json={'username':'root','password':'bad'})

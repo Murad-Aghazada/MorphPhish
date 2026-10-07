@@ -7,7 +7,7 @@ from .models import *
 from .schemas import *
 from .services import *
 from .core.config import settings
-from .auth import require_auth, make_token, check_credentials, client_ip, login_guard_check, login_record_failure, login_record_success
+from .auth import require_auth, make_token, verify_token, check_credentials, client_ip, login_guard_check, login_record_failure, login_record_success
 # Two routers: `public` is reachable without a session (health, login, and the
 # recipient-facing simulation endpoints); `router` gates every admin/API route
 # behind require_auth by default, so a new route is protected unless it is
@@ -22,13 +22,32 @@ def one(db,model,id):
     return x
 @public.get('/health')
 def health(): return {"status":"ok","app":settings.app_name,"mode":{"llm":settings.llm_provider,"campaign":settings.campaign_provider,"email":settings.email_provider}}
+SESSION_COOKIE="mp_session"
+_IS_PROD=settings.app_env.lower() in ("production","prod")
 @public.post('/auth/login',response_model=TokenOut)
-def login(body:LoginRequest,request:Request):
+def login(body:LoginRequest,request:Request,response:Response):
     ip=client_ip(request); login_guard_check(ip)
     if not check_credentials(body.username,body.password):
         login_record_failure(ip); raise HTTPException(401,"Invalid username or password")
     login_record_success(ip)
-    return TokenOut(access_token=make_token(body.username),expires_in=settings.token_ttl_minutes*60)
+    token=make_token(body.username); ttl=settings.token_ttl_minutes*60
+    # Cookie mirrors the bearer token so top-level navigations (the Mailpit gate)
+    # carry the session. httpOnly (no JS access) + SameSite=strict (no cross-site send).
+    response.set_cookie(SESSION_COOKIE,token,max_age=ttl,httponly=True,samesite="strict",secure=_IS_PROD,path="/")
+    return TokenOut(access_token=token,expires_in=ttl)
+@public.post('/auth/logout')
+def logout(response:Response):
+    response.delete_cookie(SESSION_COOKIE,path="/"); return {"ok":True}
+@public.get('/auth/check')
+def auth_check(request:Request):
+    """Session probe for nginx auth_request (gates the proxied Mailpit UI). Accepts
+    the session cookie or a bearer token; 200 when valid, 401 otherwise."""
+    tok=request.cookies.get(SESSION_COOKIE)
+    if not tok:
+        authz=request.headers.get("authorization","")
+        if authz.lower().startswith("bearer "): tok=authz[7:].strip()
+    if tok and verify_token(tok): return {"ok":True}
+    raise HTTPException(401,"Not authenticated")
 @router.get('/auth/me')
 def me(user:str=Depends(require_auth)): return {"username":user}
 @router.get('/employees',response_model=list[EmployeeOut])

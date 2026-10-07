@@ -15,11 +15,12 @@ services:
 
   mailpit:
     image: axllent/mailpit:latest
-    ports: ["8025:8025", "1025:1025"]
+    # Web UI is NOT published directly — it is reachable only through the frontend
+    # proxy at /mailpit/, gated by the admin session. SMTP (1025) stays open on the
+    # internal network for the backend; mapped to the host for convenience.
+    ports: ["1025:1025"]
     environment:
-      # Basic-auth login on the web UI + API (http://localhost:8025). SMTP on 1025
-      # stays open so the backend can deliver without credentials.
-      MP_UI_AUTH: "${MAILPIT_UI_USER:-root}:${MAILPIT_UI_PASSWORD:-root}"
+      MP_WEBROOT: "mailpit"   # serve the UI under /mailpit/ so the proxy path matches
 
   # Real campaign engine (opt-in). Start it with `docker compose --profile gophish up`
   # and set CAMPAIGN_PROVIDER=gophish. Kept off by default so a normal deployment

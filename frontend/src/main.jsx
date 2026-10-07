@@ -24,7 +24,10 @@ function AuthProvider({ children }) {
     const r = await api('/auth/login', { method: 'POST', body: JSON.stringify({ username: u, password: p }) });
     setToken(r.access_token); setAuthed(true); setReady(true);
   }, []);
-  const logout = useCallback(() => { setToken(''); setAuthed(false); }, []);
+  const logout = useCallback(() => {
+    api('/auth/logout', { method: 'POST' }).catch(() => {}); // clear the session cookie too
+    setToken(''); setAuthed(false);
+  }, []);
   return <AuthCtx.Provider value={{ authed, ready, login, logout }}>{children}</AuthCtx.Provider>;
 }
 function Login() {
@@ -226,6 +229,7 @@ function Layout({ children }) {
         </nav>
         <div className="side-foot">
           <ModeChip />
+          <a className="mailpitlink" href="/mailpit/" target="_blank" rel="noreferrer">Mail inbox ↗</a>
           <ThemeToggle />
           <button className="logoutbtn" onClick={logout}>Sign out</button>
         </div>
