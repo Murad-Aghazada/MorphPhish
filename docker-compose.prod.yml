@@ -1,0 +1,22 @@
+# Production overlay for the VPN'd Docker host, used together with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Only the frontend is published (to :3000); the server's reverse proxy forwards the
+# public domain to this host's :3000 over the VPN. The backend, database and Mailpit
+# talk over the internal compose network only — their host ports are unpublished so
+# nothing but the gated frontend is reachable off-box. Containers restart on boot.
+services:
+  db:
+    ports: !reset []          # !reset clears the base list (merging would keep it)
+    restart: unless-stopped
+  mailpit:
+    ports: !reset []
+    restart: unless-stopped
+  backend:
+    ports: !reset []
+    restart: unless-stopped
+  frontend:
+    # Bind to the VPN/loopback-reachable interface only if you want; default keeps
+    # :3000 on all interfaces of this host (the proxy reaches it over the VPN).
+    ports: ["3000:80"]
+    restart: unless-stopped
