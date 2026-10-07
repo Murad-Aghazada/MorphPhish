@@ -1,29 +1,34 @@
-# Deploy: Docker on a VPN host, public via a server reverse proxy
+# Deploy: Docker on a VPN host, published via the cluster's Traefik
 
-This is the lightweight path that avoids the Kubernetes cluster (and ArgoCD) entirely:
-run the compose stack on a Docker host that is only on the VPN, and let the public
-server's nginx forward the domain to it.
+The app runs as the compose stack on a Docker host that is only on the VPN. The
+public server is a **k3s node whose Traefik owns :80/:443**, so the domain is published
+by adding a small routing shim to the cluster that forwards to the device. The
+application itself never runs in the cluster.
 
 ```
-browser ──HTTPS──> server nginx (TLS) ──VPN──> device:3000 (frontend nginx)
-morphphish.baysarb.com                           ├── /         SPA
-  A record -> server public IP                   ├── /api/     → backend
-                                                  └── /mailpit/ → mailpit (session-gated)
+browser ──HTTPS──> Traefik (k3s, TLS via cert-manager) ──VPN──> 10.13.2.3:3000
+morphphish.baysarb.com                                            (frontend nginx)
+  A -> 84.247.143.190                                             ├── /         SPA
+                                                                  ├── /api/     → backend
+                                                                  └── /mailpit/ → mailpit (gated)
 ```
 
-Only the frontend's `:3000` is exposed on the device; the backend, Postgres and
-Mailpit stay on the internal compose network.
+Facts for this environment:
+- Server public IP: **84.247.143.190** (IPv6 `2a02:c207:2324:3626::1`).
+- Device (Docker host) VPN IP: **10.13.2.3**, port **3000**.
+- Ingress: **Traefik** (k3s). TLS: cert-manager ClusterIssuer **letsencrypt**.
+- `kubectl` on the server needs `sudo k3s kubectl` (or `KUBECONFIG=/etc/rancher/k3s/k3s.yaml`).
 
 ## 1. DNS
-Create an A record: `morphphish.baysarb.com` → **the public server's** IP (not the
-device — the device has no public address).
+`morphphish.baysarb.com` → **A `84.247.143.190`** (optionally AAAA `2a02:c207:2324:3626::1`).
+Let's Encrypt (HTTP-01) needs this resolving before the cert can be issued.
 
-## 2. On the VPN'd Docker host
+## 2. On the VPN'd Docker host (10.13.2.3)
 ```bash
 git clone https://github.com/iqulzade/MorphPhish && cd MorphPhish
 cp .env.example .env
 ```
-Edit `.env` — the essentials for a public HTTPS deployment:
+Edit `.env`:
 ```ini
 APP_ENV=production                       # secure cookies + HSTS; refuses default secrets
 APP_SECRET_KEY=<python -c "import secrets;print(secrets.token_urlsafe(32))">
@@ -33,65 +38,48 @@ FRONTEND_URL=https://morphphish.baysarb.com
 BACKEND_URL=https://morphphish.baysarb.com
 CORS_ORIGINS=https://morphphish.baysarb.com
 TRUST_PROXY_HEADERS=false                # two proxy hops -> coarse (global) login lockout, un-spoofable
-
 LLM_PROVIDER=gemini
 LLM_API_KEY=<your-gemini-key>
 LLM_MODEL=gemini-flash-lite-latest
-
-EMAIL_PROVIDER=smtp                      # deliver simulation mail to the bundled Mailpit
-SEED_ON_START=true                       # demo personas + scenarios on first boot
+EMAIL_PROVIDER=smtp
+SEED_ON_START=true
 ```
-Start it (production overlay unpublishes everything but :3000):
+Start it (overlay publishes only :3000 on the host):
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-docker compose ps
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/        # 200
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/        # expect 200
 ```
 
-## 3. On the public server (nginx) — without disturbing existing sites
-This only *adds* a name-based virtual host for `morphphish.baysarb.com`; it shares
-ports 80/443 with the other sites via normal virtual hosting and does not change them.
-Two rules keep it safe: **always `nginx -t` before reloading** (a failed test means you
-simply don't reload, and the running config is untouched — reload is zero-downtime),
-and **never `restart`** (use `reload`).
-
+## 3. On the server — verify reachability, then add the route
 ```bash
-# 0) back up the current config (instant rollback if needed)
-sudo cp -a /etc/nginx /etc/nginx.bak.$(date +%F)
-
-# 1) pre-flight: make sure nothing already claims this host
-sudo grep -rn "morphphish.baysarb.com" /etc/nginx/        # expect: no matches
-sudo nginx -T | grep -c "server_name _.*default_server"   # just informational
-
-# 2) drop in the vhost and set the device's VPN IP
-sudo cp deploy/nginx-morphphish.conf /etc/nginx/conf.d/morphphish.conf
-sudo sed -i 's/DEVICE_VPN_IP/<device-vpn-ip>/' /etc/nginx/conf.d/morphphish.conf
-
-# 3) TEST FIRST — only reload if it says "syntax is ok / test is successful"
-sudo nginx -t
-sudo systemctl reload nginx
-
-# 4) get the TLS cert. certonly does NOT rewrite your other vhosts; it only obtains
-#    the cert (the nginx plugin handles the challenge and reverts).
-sudo certbot certonly --nginx -d morphphish.baysarb.com
+# Traefik (a pod) will connect to the device; first confirm the node can reach it:
+curl -s -o /dev/null -w "%{http_code}\n" http://10.13.2.3:3000          # expect 200
+sudo k3s kubectl get ingressclass                                       # confirm name is "traefik"
+sudo k3s kubectl get clusterissuer                                      # confirm "letsencrypt" is Ready
 ```
-Then uncomment the HTTPS block at the bottom of `morphphish.conf` (it references the
-cert paths certbot just created) and turn the port-80 block into a redirect — both are
-pre-written in the file — then `sudo nginx -t && sudo systemctl reload nginx` again.
+Then apply the routing shim (`deploy/cluster-route/morphphish-route.yaml` — a
+selectorless Service + EndpointSlice → `10.13.2.3:3000` and a Traefik Ingress with TLS):
 
-> Prefer the one-shot `sudo certbot --nginx -d morphphish.baysarb.com`? It also works
-> and auto-adds the 443 block, but it *edits* nginx config in place. With the backup from
-> step 0 and `nginx -t` as the gate, it's still safe; `certonly` is just the most hands-off.
-
-Open **https://morphphish.baysarb.com** and sign in with the admin credentials. The
-Mailpit inbox is the **Mail inbox ↗** link in the sidebar (same login).
-
-### If anything looks wrong
+**Because this cluster runs ArgoCD** (which prunes resources not in Git), add the shim
+through GitOps so it isn't deleted:
 ```bash
-sudo rm /etc/nginx/conf.d/morphphish.conf   # remove just this vhost
-sudo nginx -t && sudo systemctl reload nginx
-# or full rollback: sudo rm -rf /etc/nginx && sudo mv /etc/nginx.bak.<date> /etc/nginx && sudo systemctl reload nginx
+# copy deploy/cluster-route/morphphish-route.yaml into the repo/path ArgoCD syncs,
+# commit + push, and let ArgoCD apply it. Find the repo with:
+sudo k3s kubectl -n argocd get applications -o wide
 ```
+Only if no ArgoCD Application would prune this namespace, you may apply it directly:
+```bash
+sudo k3s kubectl apply -f deploy/cluster-route/morphphish-route.yaml
+```
+
+Verify the cert issues (a minute or two) and the site answers:
+```bash
+sudo k3s kubectl -n morphphish-route get ingress,endpointslice
+sudo k3s kubectl -n morphphish-route get certificate        # READY should become True
+curl -sI https://morphphish.baysarb.com | head -n1          # expect HTTP/2 200
+```
+Open **https://morphphish.baysarb.com**, sign in, and the Mailpit inbox is the
+**Mail inbox ↗** link in the sidebar (same login).
 
 ## Update
 ```bash
@@ -102,24 +90,22 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 ## Stop / remove completely
 ```bash
-# on the device
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v   # containers + volumes
-# on the server
-sudo rm /etc/nginx/conf.d/morphphish.conf && sudo systemctl reload nginx
-# optionally: remove the DNS record and the Let's Encrypt cert (certbot delete)
+# cluster route: delete from the GitOps repo (ArgoCD prunes it), or:
+sudo k3s kubectl delete namespace morphphish-route
+# on the device:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
+# optionally remove the DNS record.
 ```
 
 ## Notes
-- **Must be HTTPS**: `APP_ENV=production` marks the session cookie `Secure`, so the
-  Mailpit gate only works over TLS. (The console login itself uses a bearer token and
-  would work over plain HTTP, but the Mailpit cookie would not be sent.)
-- **Login lockout is global/coarse** here: with two proxy hops the real client IP
-  isn't reliable, so failed sign-ins are counted across all sources (un-spoofable, but
-  a flood briefly locks the single admin out; clears after `LOGIN_LOCKOUT_MINUTES`).
-- **No mail leaves the cluster**: Mailpit is a test inbox and recipients are still
-  limited to `AUTHORIZED_EMAIL_DOMAINS`.
-- The database here is the compose Postgres (with a volume); `down -v` wipes it.
-- The overlay uses the `!reset` tag to unpublish the backend/db/Mailpit host ports,
-  which needs Docker Compose ≥ v2.24. On older Compose it errors — drop the overlay
-  (those ports are then published on the device, but it's VPN-only and the API is
-  still auth-gated), or remove those `ports:` from the base file.
+- **Does not disturb other services**: the shim is its own namespace and one extra
+  Traefik host rule; it doesn't touch existing routes. Traefik already multiplexes
+  many hosts on 80/443.
+- **Must be HTTPS**: `APP_ENV=production` marks the session cookie `Secure`; the Mailpit
+  gate relies on it. Traefik terminates TLS, so this holds.
+- **Login lockout is global/coarse** (two proxy hops hide the real client IP) —
+  un-spoofable, but a flood briefly locks the single admin out; clears after
+  `LOGIN_LOCKOUT_MINUTES`.
+- **If Traefik can't reach the device** even though the node can, it's pod-egress to the
+  VPN subnet — tell me and we'll adjust (hostNetwork solver or a node route).
+- The compose database is Postgres with a volume; `down -v` wipes it.

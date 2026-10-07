@@ -1,0 +1,73 @@
+# Routing shim: makes the cluster's Traefik serve https://morphphish.baysarb.com and
+# forward to the MorphPhish app running as Docker on the VPN host (10.13.2.3:3000).
+#
+# The application does NOT run in the cluster — only this route does. It is a
+# selectorless Service + a manual EndpointSlice pointing at the external device, plus
+# an Ingress (Traefik class) with a cert-manager TLS cert. Everything is in the
+# `morphphish-route` namespace, so teardown is: kubectl delete namespace morphphish-route
+# (or remove this file from the GitOps repo and let ArgoCD prune it).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: morphphish-route
+  labels:
+    app.kubernetes.io/part-of: morphphish
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: morphphish-ext
+  namespace: morphphish-route
+  labels:
+    app.kubernetes.io/part-of: morphphish
+spec:
+  # No selector: endpoints are defined manually (the target is outside the cluster).
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: morphphish-ext-1
+  namespace: morphphish-route
+  labels:
+    kubernetes.io/service-name: morphphish-ext   # associates this slice with the Service
+    app.kubernetes.io/part-of: morphphish
+addressType: IPv4
+ports:
+  - name: http
+    port: 3000
+    protocol: TCP
+endpoints:
+  - addresses:
+      - "10.13.2.3"        # <-- VPN IP of the Docker host (change if it differs)
+    conditions:
+      ready: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: morphphish
+  namespace: morphphish-route
+  labels:
+    app.kubernetes.io/part-of: morphphish
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt"
+spec:
+  ingressClassName: traefik            # confirm with: sudo k3s kubectl get ingressclass
+  tls:
+    - hosts: ["morphphish.baysarb.com"]
+      secretName: morphphish-tls       # created by cert-manager
+  rules:
+    - host: morphphish.baysarb.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: morphphish-ext
+                port:
+                  number: 3000
