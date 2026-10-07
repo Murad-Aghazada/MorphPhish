@@ -20,7 +20,7 @@ Internet ──TLS──> ingress-nginx ──> frontend (nginx)
 
 ## Prerequisites
 - `kubectl` + `kustomize` (built into `kubectl apply -k`), access to the cluster.
-- ingress-nginx controller and cert-manager with a ClusterIssuer (default assumed: `letsencrypt-prod`).
+- ingress-nginx controller and cert-manager with a ClusterIssuer named `letsencrypt`.
 - A DNS A/AAAA record for `morphphish.baysarb.com` pointing at the ingress load balancer.
 - Docker Hub account. The images are **public**, so the cluster needs no pull secret.
 
