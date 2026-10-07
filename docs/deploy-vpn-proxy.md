@@ -50,6 +50,42 @@ again so links/cookies match. Make sure inbound **8080** is open on the server f
 
 Remove the proxy anytime: `cd deploy/server-proxy && docker compose down`.
 
+## C. Cloudflare Tunnel — clean https://morphphish.baysarb.com, free cert, no open ports
+The zone `baysarb.com` is on Cloudflare, so a tunnel is the cleanest public option: a
+real cert, no inbound ports, and nothing in the k3s/Traefik stack. Connector config is
+in `deploy/cloudflared/`.
+
+1. Cloudflare dashboard → **Zero Trust → Networks → Tunnels → Create a tunnel** →
+   connector **Cloudflared** → name `morphphish` → Save. Copy the **token** from the
+   install command shown (the long string after `--token`).
+2. Same tunnel → **Public Hostname → Add**:
+   - Subdomain `morphphish`, Domain `baysarb.com`
+   - Service **HTTP**, URL `localhost:3000` (connector on the device) or `10.13.2.3:3000`
+     (connector on the server). Save — this creates the proxied DNS record for you.
+   - If it warns that a `morphphish` DNS record already exists, delete that old A record first.
+3. Run the connector (on the device if it has internet egress; else on the server):
+   ```bash
+   cd MorphPhish/deploy/cloudflared
+   echo "TUNNEL_TOKEN=<paste-token>" > .env      # gitignored
+   docker compose up -d
+   docker compose logs --tail=20 cloudflared     # expect "Registered tunnel connection"
+   ```
+4. Point the app at the HTTPS hostname and rebuild (drop COOKIE_SECURE — it's real TLS now):
+   ```ini
+   APP_ENV=production
+   FRONTEND_URL=https://morphphish.baysarb.com
+   BACKEND_URL=https://morphphish.baysarb.com
+   CORS_ORIGINS=https://morphphish.baysarb.com
+   ```
+   ```bash
+   cd ~/MorphPhish && docker compose up -d --build
+   ```
+5. Open **https://morphphish.baysarb.com**. Then retire the plain-HTTP proxy and its
+   firewall rule — the tunnel needs no inbound ports:
+   ```bash
+   cd deploy/server-proxy && docker compose down
+   ```
+
 ## Domain (optional, no certificate needed)
 Point DNS **A `morphphish.baysarb.com` → 84.247.143.190**, then open
 **http://morphphish.baysarb.com:8080** (set the device's three URLs to that). The `:8080`

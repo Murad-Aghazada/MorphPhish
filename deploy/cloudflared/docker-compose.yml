@@ -1,0 +1,17 @@
+# Cloudflare Tunnel connector. Run this ON THE DEVICE (10.13.2.3) if it has outbound
+# internet; otherwise run it on the public server and set the tunnel's public-hostname
+# service URL to http://10.13.2.3:3000 instead of http://localhost:3000.
+#
+# 1) Create the tunnel + public hostname in the Cloudflare Zero Trust dashboard
+#    (see docs/deploy-vpn-proxy.md), copy the connector token.
+# 2) echo "TUNNEL_TOKEN=<paste-token>" > .env      # kept out of git
+# 3) docker compose up -d
+#
+# network_mode: host so the tunnel can reach the app on localhost:3000. No inbound
+# ports are opened — the connector dials out to Cloudflare over 443.
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    network_mode: host
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
