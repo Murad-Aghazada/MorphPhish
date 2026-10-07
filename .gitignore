@@ -14,3 +14,5 @@ coverage/
 *.db-journal
 *.db-wal
 *.db-shm
+# never commit a filled-in k8s secret (secret.example.yaml is the safe template)
+k8s/secret.yaml

@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailpit
+  labels: { app.kubernetes.io/part-of: morphphish, app: mailpit }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: mailpit }
+  template:
+    metadata:
+      labels: { app: mailpit, app.kubernetes.io/part-of: morphphish }
+    spec:
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:latest
+          env:
+            - name: MP_WEBROOT               # UI under /mailpit/ so the proxy path matches
+              value: "mailpit"
+          ports:
+            - containerPort: 8025            # web UI / API (gated by the app session)
+            - containerPort: 1025            # SMTP (backend delivers here, in-cluster only)
+          readinessProbe:
+            tcpSocket: { port: 8025 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit
+  labels: { app.kubernetes.io/part-of: morphphish }
+spec:
+  type: ClusterIP
+  selector: { app: mailpit }
+  ports:
+    - name: http
+      port: 8025
+      targetPort: 8025
+    - name: smtp
+      port: 1025
+      targetPort: 1025
