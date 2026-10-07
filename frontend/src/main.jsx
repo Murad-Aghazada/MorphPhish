@@ -33,24 +33,60 @@ function Login() {
   const [p, setP] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [show, setShow] = useState(false);
   const submit = async (e) => {
     if (e) e.preventDefault();
     setBusy(true); setErr('');
     try { await login(u.trim(), p); } catch (x) { setErr(x.message); } finally { setBusy(false); }
   };
   return (
-    <div className="loginwrap">
-      <form className="logincard" onSubmit={submit}>
-        <div className="wordmark" style={{ justifyContent: 'center', marginBottom: 4 }}><Glyph />MorphPhish</div>
-        <div className="tag" style={{ textAlign: 'center', marginBottom: 18 }}>admin console sign-in</div>
-        <label>Username</label>
-        <input autoFocus value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" />
-        <label>Password</label>
-        <input type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" />
-        {err && <p className="loginerr">{err}</p>}
-        <button className="loginbtn" disabled={busy || !u || !p} type="submit">{busy ? 'Signing in…' : 'Sign in'}</button>
-        <span className="muted" style={{ fontSize: 12, textAlign: 'center', marginTop: 10 }}>Demo credentials: root / root</span>
-      </form>
+    <div className="loginpage">
+      <div className="loginpanel">
+        <aside className="login-aside">
+          <div className="login-aside-top">
+            <div className="login-logo"><Glyph /><span>MorphPhish</span></div>
+            <p className="login-aside-tag">Role-aware phishing-awareness simulation for security teams.</p>
+          </div>
+          <ul className="login-points">
+            <li>Generate contextual, approval-gated simulations</li>
+            <li>Track the open → click → report funnel per team</li>
+            <li>Turn outcomes into an explainable human-risk map</li>
+          </ul>
+          <div className="login-aside-foot">Authorized security testing · synthetic data only</div>
+        </aside>
+
+        <main className="login-main">
+          <form className="login-form" onSubmit={submit}>
+            <div className="login-logo compact"><Glyph /><span>MorphPhish</span></div>
+            <h1 className="login-title">Welcome back</h1>
+            <p className="login-sub">Sign in to the admin console.</p>
+
+            <label htmlFor="lg-user">Username</label>
+            <div className="login-field">
+              <input id="lg-user" autoFocus value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" placeholder="Your username" />
+            </div>
+
+            <label htmlFor="lg-pass">Password</label>
+            <div className="login-field">
+              <input id="lg-pass" type={show ? 'text' : 'password'} value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" placeholder="Your password" />
+              <button type="button" className="login-eye" onClick={() => setShow((s) => !s)} aria-label={show ? 'Hide password' : 'Show password'} tabIndex={-1}>
+                {show ? 'Hide' : 'Show'}
+              </button>
+            </div>
+
+            {err && <p className="loginerr" role="alert">{err}</p>}
+
+            <button className="loginbtn" disabled={busy || !u || !p} type="submit">{busy ? 'Signing in…' : 'Sign in'}</button>
+
+            <p className="login-secure">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="4" y="11" width="16" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />
+              </svg>
+              Authorized use only. Activity is logged and sessions expire automatically.
+            </p>
+          </form>
+        </main>
+      </div>
     </div>
   );
 }
