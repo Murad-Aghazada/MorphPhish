@@ -31,7 +31,7 @@ URLs:
 - Frontend (+ same-origin API proxy): http://localhost:3000
 - Backend (direct): http://localhost:8000
 - Swagger: http://localhost:8000/docs
-- Mailpit UI (when SMTP provider is enabled for local testing): http://localhost:8025
+- Mailpit UI (when SMTP provider is enabled for local testing): http://localhost:8025 — basic-auth login (`MAILPIT_UI_USER`/`MAILPIT_UI_PASSWORD`, default root/root); SMTP on 1025 stays open for the backend
 - GoPhish (opt-in): `docker compose --profile gophish up` — admin UI http://localhost:3333
 
 ## Production deployment (single host)

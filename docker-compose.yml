@@ -16,6 +16,10 @@ services:
   mailpit:
     image: axllent/mailpit:latest
     ports: ["8025:8025", "1025:1025"]
+    environment:
+      # Basic-auth login on the web UI + API (http://localhost:8025). SMTP on 1025
+      # stays open so the backend can deliver without credentials.
+      MP_UI_AUTH: "${MAILPIT_UI_USER:-root}:${MAILPIT_UI_PASSWORD:-root}"
 
   # Real campaign engine (opt-in). Start it with `docker compose --profile gophish up`
   # and set CAMPAIGN_PROVIDER=gophish. Kept off by default so a normal deployment
