@@ -19,7 +19,7 @@ from .models import Employee, Scenario, Campaign, CampaignTarget, InteractionEve
 from .services import sync_from_hr, recalc_risk, ensure_context, assess_quality, derive_topics, assign_training, complete_training
 from .llm.prompts import render_scenario, normalize_language
 
-# Outcome shorthand -> interaction events (minutes after delivery).
+# Outcome shorthand -> interaction events (minutes after delivery). 1.
 OUTCOMES = {
     "reported":  [("email_opened", 3), ("link_clicked", 6), ("simulation_reported", 9)],
     "submitted": [("email_opened", 2), ("link_clicked", 5), ("credential_simulation_submitted", 7)],
