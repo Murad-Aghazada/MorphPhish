@@ -18,7 +18,7 @@ FastAPI, SQLAlchemy, PostgreSQL, Alembic, React/Vite, Recharts, Docker Compose, 
 - mock mode is the default.
 
 ## Signing in
-The console requires sign-in. Demo credentials: **root / root** (set via `ADMIN_USERNAME`/`ADMIN_PASSWORD`). Sessions are signed bearer tokens that expire after `TOKEN_TTL_MINUTES` (default 8h).
+The console requires sign-in. Demo credentials: **root / root** (set via `ADMIN_USERNAME`/`ADMIN_PASSWORD`). Sessions are signed bearer tokens that expire after `TOKEN_TTL_MINUTES` (default 8h)
 
 ## Quick start
 ```bash
