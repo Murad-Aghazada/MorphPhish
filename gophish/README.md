@@ -8,4 +8,5 @@ For a real authorized lab, pre-create exactly these GoPhish resources and keep t
 - Group: `MorphPhish Synthetic Targets`
 
 Set `GOPHISH_URL`, `GOPHISH_API_KEY`, and `CAMPAIGN_PROVIDER=gophish` only after Rules of Engagement approval.
-The application does not ask GoPhish to collect or persist real passwords.
+The application does not ask GoPhish to collect or persist real passwords .
+
